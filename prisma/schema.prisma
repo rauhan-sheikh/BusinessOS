@@ -1,0 +1,145 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BusinessRole {
+  OWNER
+  ADMIN
+  ACCOUNTANT
+}
+
+enum TransactionType {
+  SALE
+  PURCHASE
+  PAYMENT_RECEIEVED
+  PAYMENT_MADE
+  OPENING_BALANCE
+  ADJUSTMENT
+  REVERSAL
+}
+
+enum OpeningBalanceType {
+  RECEIVABLE
+  PAYABLE
+}
+
+model User {
+  id            String         @id @default(uuid())
+  fullName      String
+  email         String         @unique
+  username      String         @unique
+  passwordHash  String
+  phone         String?        @unique
+  isActive      Boolean        @default(true)
+  emailVerified Boolean        @default(false)
+  lastLogin     DateTime?
+  created_at    DateTime       @default(now())
+  updated_at    DateTime       @updatedAt
+  businesses    BusinessUser[]
+  auditLogs     AuditLog[]
+  transaction   Transaction[]
+}
+
+model Business {
+  id           String         @id @default(uuid())
+  name         String
+  legalName    String?
+  gstin        String?
+  pan          String?
+  phone        String?
+  email        String?
+  address      String?
+  currency     String         @default("INR")
+  timezone     String         @default("Asia/Kolkata")
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  users        BusinessUser[]
+  parties      Party[]
+  transactions Transaction[]
+  auditLogs    AuditLog[]
+}
+
+model BusinessUser {
+  id         String       @id @default(uuid())
+  businessId String
+  userId     String
+  role       BusinessRole @default(OWNER)
+  joinedAt   DateTime     @default(now())
+  business   Business     @relation(fields: [businessId], references: [id])
+  user       User         @relation(fields: [userId], references: [id])
+
+  @@unique([businessId, userId])
+}
+
+model Party {
+  id           String        @id @default(uuid())
+  businessId   String
+  name         String
+  phone        String?
+  email        String?
+  address      String?
+  gstin        String?
+  pan          String?
+  notes        String?
+  isArchived   Boolean       @default(false)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  business     Business      @relation(fields: [businessId], references: [id])
+  transactions Transaction[]
+  balance      PartyBalance?
+
+  @@index([businessId])
+}
+
+model PartyBalance {
+  id              String   @id @default(uuid())
+  businessId      String
+  partyId         String   @unique
+  receivableMinor BigInt   @default(0)
+  payableMinor    BigInt   @default(0)
+  updatedAt       DateTime @updatedAt
+  party           Party    @relation(fields: [partyId], references: [id])
+
+  @@index([businessId])
+}
+
+model Transaction {
+  id                    String              @id @default(uuid())
+  businessId            String
+  partyId               String
+  transactionType       TransactionType
+  amountMinor           BigInt
+  OpeningBalanceType    OpeningBalanceType?
+  notes                 String?
+  referenceNumber       String?
+  reversedTransactionId String?
+  createdById           String
+  createdAt             DateTime            @default(now())
+  business              Business            @relation(fields: [businessId], references: [id])
+  createdBy             User                @relation(fields: [createdById], references: [id])
+  party                 Party               @relation(fields: [partyId], references: [id])
+
+  @@index([businessId])
+  @@index([partyId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  businessId String
+  userId     String
+  actionType String
+  metadata   Json
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@index([businessId])
+}
