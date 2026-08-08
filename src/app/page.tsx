@@ -7,6 +7,7 @@ export default function ComingSoonPage() {
   const [status, setStatus] = useState<
     "idle" | "loading" | "success" | "error"
   >("idle");
+  const [errorMessage, setErrorMessage] = useState("");
 
   // Set your target launch date here
   const LAUNCH_DATE = new Date("2026-08-15T00:00:00").getTime();
@@ -44,12 +45,34 @@ export default function ComingSoonPage() {
     if (!email) return;
 
     setStatus("loading");
+    setErrorMessage("");
 
-    // Simulate API request - replace this with your actual backend route later
-    setTimeout(() => {
+    try {
+      const response = await fetch("/api/emailList", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (Array.isArray(data.error)) {
+          throw new Error(data.error[0].message || "Invalid email address");
+        } else {
+          throw new Error(data.error || "Failed to subscribe.");
+        }
+      }
+
       setStatus("success");
       setEmail("");
-    }, 1200);
+    } catch (error: any) {
+      console.error("Subscribtion error:", error);
+      setStatus("error");
+      setErrorMessage(error.message || "An unexpected error occurred.");
+    }
   };
 
   return (
@@ -129,6 +152,13 @@ export default function ComingSoonPage() {
           {status === "success" && (
             <p className="text-xs text-emerald-400 font-medium animate-fade-in">
               Awesome! We will let you know as soon as the platform goes live.
+            </p>
+          )}
+
+          {/* Error Status Subtext */}
+          {status === "error" && (
+            <p className="text-xs text-rose-400 font-medium animate-fade-in text-center bg-rose-500/10 border border-rose-500/20 py-2 px-3 rounded-xl">
+              {errorMessage}
             </p>
           )}
         </div>
