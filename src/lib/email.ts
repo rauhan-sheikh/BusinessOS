@@ -2,17 +2,23 @@ import { Resend } from "resend";
 
 export const resend = new Resend(process.env.RESEND_API_KEY);
 
-type SendEmailInput = {
+type SendTemplateEmailInput = {
   to: string;
-  subject: string;
-  html: string;
+  templateAlias: string;
+  variables: Record<string, string | number>;
 };
 
-export async function sendEmail({ to, subject, html }: SendEmailInput) {
+export async function sendTemplateEmail({
+  to,
+  templateAlias,
+  variables,
+}: SendTemplateEmailInput) {
   return resend.emails.send({
     from: process.env.EMAIL_FROM as string,
     to,
-    subject,
-    html,
+    template: {
+      id: templateAlias,
+      variables,
+    },
   });
 }
