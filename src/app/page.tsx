@@ -10,7 +10,7 @@ export default function ComingSoonPage() {
   const [errorMessage, setErrorMessage] = useState("");
 
   // Set your target launch date here
-  const LAUNCH_DATE = new Date("2026-08-15T00:00:00").getTime();
+  const LAUNCH_DATE = new Date("2026-10-01T00:00:00").getTime();
 
   const [timeLeft, setTimeLeft] = useState({
     days: 0,

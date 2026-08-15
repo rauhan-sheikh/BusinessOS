@@ -12,6 +12,7 @@
     "@prisma/adapter-pg": "^7.9.1",
     "@prisma/client": "^7.9.1",
     "argon2": "^0.45.1",
+    "better-auth": "^1.6.27",
     "next": "16.2.6",
     "pg": "^8.22.0",
     "prisma": "^7.9.1",
