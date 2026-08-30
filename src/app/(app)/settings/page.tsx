@@ -1,9 +1,11 @@
-import { auth } from "@/lib/auth";
-import { businessService } from "@/modules/businesses/services/business.service";
 import { headers } from "next/headers";
+import { businessService } from "@/modules/businesses/services/business.service";
+import { invitationService } from "@/modules/businesses/services/invitation.service";
+import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import SettingsClient, {
   type BusinessData,
   type MemberData,
+  type InvitationData,
   type AuditLogData,
 } from "./SettingsClient";
 
@@ -16,13 +18,13 @@ function serializeBigInt<T>(obj: T): T {
 }
 
 export default async function SettingsPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  const memberships = await businessService.getBusinessesForUser(session!.user.id);
-  const activeMembership = memberships[0];
-  const activeBusiness = activeMembership.business;
+  const reqHeaders = await headers();
+  const { business: activeBusiness, role: activeRole } =
+    await getActiveBusinessContext(reqHeaders);
 
-  const [members, auditLogs] = await Promise.all([
+  const [members, invitations, auditLogs] = await Promise.all([
     businessService.getMembers(activeBusiness.id),
+    invitationService.listInvitations(activeBusiness.id),
     businessService.getAuditLogs(activeBusiness.id, 50),
   ]);
 
@@ -30,8 +32,9 @@ export default async function SettingsPage() {
     <SettingsClient
       initialBusiness={activeBusiness as unknown as BusinessData}
       initialMembers={serializeBigInt(members) as unknown as MemberData[]}
+      initialInvitations={serializeBigInt(invitations) as unknown as InvitationData[]}
       initialAuditLogs={serializeBigInt(auditLogs) as unknown as AuditLogData[]}
-      currentUserRole={activeMembership.role}
+      currentUserRole={activeRole}
     />
   );
 }

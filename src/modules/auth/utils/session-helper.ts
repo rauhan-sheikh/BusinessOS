@@ -9,8 +9,16 @@ export interface AuthenticatedBusinessContext {
   role: BusinessRole;
 }
 
+function getCookie(headers: Headers, name: string): string | null {
+  const cookieHeader = headers.get("cookie");
+  if (!cookieHeader) return null;
+  const match = cookieHeader.match(new RegExp(`(^|;\\s*)${name}=([^;]*)`));
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
 /**
  * Validates server session and resolves the user's active business and role.
+ * Resolves active business from the `active_business_id` cookie or defaults to first business.
  * Throws AppError(401) if not authenticated or AppError(403) if no active business membership.
  */
 export async function getActiveBusinessContext(
@@ -28,8 +36,12 @@ export async function getActiveBusinessContext(
     throw new AppError("No active business found for this account. Please complete onboarding.", 403);
   }
 
-  // Active business defaults to the first business membership
-  const activeMembership = memberships[0];
+  // Check if active_business_id cookie is present and valid for this user
+  const activeBusinessIdCookie = getCookie(headers, "active_business_id");
+  const activeMembership =
+    (activeBusinessIdCookie &&
+      memberships.find((m) => m.businessId === activeBusinessIdCookie)) ||
+    memberships[0];
 
   return {
     user: session.user as unknown as User,

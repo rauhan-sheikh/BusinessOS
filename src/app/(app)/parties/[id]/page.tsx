@@ -1,7 +1,6 @@
-import { auth } from "@/lib/auth";
-import { businessService } from "@/modules/businesses/services/business.service";
-import { partyService } from "@/modules/parties/services/party.service";
 import { headers } from "next/headers";
+import { partyService } from "@/modules/parties/services/party.service";
+import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { notFound } from "next/navigation";
 import PartyDetailClient, { type PartyDetailData } from "./PartyDetailClient";
 
@@ -17,9 +16,8 @@ export default async function PartyDetailPage(props: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await props.params;
-  const session = await auth.api.getSession({ headers: await headers() });
-  const memberships = await businessService.getBusinessesForUser(session!.user.id);
-  const activeBusiness = memberships[0].business;
+  const reqHeaders = await headers();
+  const { business: activeBusiness } = await getActiveBusinessContext(reqHeaders);
 
   let party;
   try {

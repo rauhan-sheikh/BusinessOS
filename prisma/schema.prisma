@@ -28,6 +28,13 @@ enum OpeningBalanceType {
   PAYABLE
 }
 
+enum InvitationStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+  EXPIRED
+}
+
 model User {
   id            String         @id
   name          String
@@ -43,9 +50,10 @@ model User {
   sessions      Session[]
   accounts      Account[]
 
-  businesses    BusinessUser[]
-  auditLogs     AuditLog[]
-  transactions  Transaction[]
+  businesses      BusinessUser[]
+  auditLogs       AuditLog[]
+  transactions    Transaction[]
+  invitationsSent Invitation[]
 
   @@map("user")
 }
@@ -67,6 +75,7 @@ model Business {
   parties      Party[]
   transactions Transaction[]
   auditLogs    AuditLog[]
+  invitations  Invitation[]
 }
 
 model BusinessUser {
@@ -200,4 +209,23 @@ model Verification {
 
   @@index([identifier])
   @@map("verification")
+}
+
+model Invitation {
+  id         String           @id @default(uuid())
+  businessId String
+  email      String
+  role       BusinessRole     @default(ACCOUNTANT)
+  token      String           @unique
+  status     InvitationStatus @default(PENDING)
+  inviterId  String
+  expiresAt  DateTime
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  inviter  User     @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@index([email])
 }

@@ -1,8 +1,7 @@
-import { auth } from "@/lib/auth";
-import { businessService } from "@/modules/businesses/services/business.service";
+import { headers } from "next/headers";
 import { partyService } from "@/modules/parties/services/party.service";
 import { transactionService } from "@/modules/transactions/services/transaction.service";
-import { headers } from "next/headers";
+import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import TransactionsClient, { type LedgerTransaction } from "./TransactionsClient";
 
 function serializeBigInt<T>(obj: T): T {
@@ -17,9 +16,8 @@ export default async function TransactionsPage(props: {
   searchParams: Promise<{ action?: string; partyId?: string }>;
 }) {
   const { action, partyId } = await props.searchParams;
-  const session = await auth.api.getSession({ headers: await headers() });
-  const memberships = await businessService.getBusinessesForUser(session!.user.id);
-  const activeBusiness = memberships[0].business;
+  const reqHeaders = await headers();
+  const { business: activeBusiness } = await getActiveBusinessContext(reqHeaders);
 
   const [{ transactions, totalCount }, parties] = await Promise.all([
     transactionService.listTransactions(activeBusiness.id, {

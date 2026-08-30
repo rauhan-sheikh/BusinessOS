@@ -18,7 +18,15 @@ export async function POST(request: Request) {
     const body = await request.json();
     const business = await businessService.createBusiness(session.user.id, body);
 
-    return NextResponse.json({ business }, { status: 201 });
+    const response = NextResponse.json({ business }, { status: 201 });
+    response.cookies.set("active_business_id", business.id, {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+    });
+
+    return response;
   } catch (err: unknown) {
     if (err instanceof ZodError) {
       return NextResponse.json({ error: err.issues }, { status: 400 });

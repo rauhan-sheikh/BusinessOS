@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { auth } from "@/lib/auth";
 import { headers } from "next/headers";
 import Link from "next/link";
-import Logo from "@/shared/components/Logo";
+import OnboardingHeader from "./components/OnboardingHeader";
 
 export default async function OnboardingLayout({
   children,
@@ -22,13 +22,8 @@ export default async function OnboardingLayout({
       <div className="absolute top-[-10%] left-[-10%] h-[500px] w-[500px] rounded-full bg-indigo-500/10 blur-[140px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] h-[500px] w-[500px] rounded-full bg-emerald-500/10 blur-[140px] pointer-events-none" />
 
-      {/* Top Header */}
-      <header className="relative z-10 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-6 flex items-center justify-between">
-        <Logo href="/" badge="Workspace Setup" size="md" />
-        <div className="text-xs text-slate-400">
-          Signed in as <span className="text-slate-200 font-medium">{session.user.name}</span>
-        </div>
-      </header>
+      {/* Top Header with Sign out */}
+      <OnboardingHeader userName={session.user.name} />
 
       {/* Centered Form */}
       <div className="relative z-10 mx-auto w-full max-w-xl px-4 py-8">

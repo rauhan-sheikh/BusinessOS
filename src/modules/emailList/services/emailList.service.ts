@@ -11,6 +11,15 @@ export class EmailListService {
     }
     return emailListRepository.createEmail(validatedData);
   }
+
+  async ensureEmail(email: string) {
+    if (!email || !email.includes("@")) return;
+    try {
+      await emailListRepository.ensureEmail(email);
+    } catch (err) {
+      console.error("Failed to ensure email in emailList:", err);
+    }
+  }
 }
 
 export const emailListService = new EmailListService();

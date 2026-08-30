@@ -1,14 +1,24 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { signOut } from "@/lib/auth-client";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/shared/components/Logo";
+import type { BusinessRole } from "@/generated/prisma/client";
+
+export interface WorkspaceMembership {
+  id: string;
+  name: string;
+  role: BusinessRole;
+}
 
 type AppTopBarProps = {
   user: { name: string; email: string };
   businessName: string;
+  activeBusinessId?: string;
+  activeRole?: BusinessRole;
+  memberships?: WorkspaceMembership[];
 };
 
 const NAV_ITEMS = [
@@ -18,8 +28,18 @@ const NAV_ITEMS = [
   { label: "Settings", href: "/settings" },
 ];
 
-export default function AppTopBar({ user, businessName }: AppTopBarProps) {
+export default function AppTopBar({
+  user,
+  businessName,
+  activeBusinessId,
+  activeRole = "OWNER",
+  memberships = [],
+}: AppTopBarProps) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
+  const [switching, setSwitching] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
   const router = useRouter();
   const pathname = usePathname();
 
@@ -27,18 +47,118 @@ export default function AppTopBar({ user, businessName }: AppTopBarProps) {
     await signOut({ fetchOptions: { onSuccess: () => router.push("/login") } });
   };
 
+  const handleSwitchWorkspace = async (businessId: string) => {
+    if (businessId === activeBusinessId) {
+      setWorkspaceDropdownOpen(false);
+      return;
+    }
+
+    setSwitching(true);
+    try {
+      const res = await fetch("/api/businesses/switch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessId }),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to switch workspace");
+      }
+
+      setWorkspaceDropdownOpen(false);
+      router.refresh();
+    } catch (err) {
+      console.error(err);
+      alert("Failed to switch workspace");
+    } finally {
+      setSwitching(false);
+    }
+  };
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setWorkspaceDropdownOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   return (
     <header className="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md sticky top-0 z-40">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
-          {/* Left: Logo + Business name + Desktop Nav */}
+          {/* Left: Logo + Workspace Switcher + Desktop Nav */}
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
               <Logo href="/dashboard" size="md" />
+
               <div className="h-4 w-px bg-slate-800 hidden sm:block" />
-              <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 max-w-[120px] sm:max-w-[160px] truncate">
-                {businessName}
-              </span>
+
+              {/* Workspace Switcher Trigger */}
+              <div className="relative" ref={dropdownRef}>
+                <button
+                  type="button"
+                  onClick={() => setWorkspaceDropdownOpen(!workspaceDropdownOpen)}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 text-xs font-semibold transition-all cursor-pointer group"
+                >
+                  <span className="text-indigo-400 max-w-[110px] sm:max-w-[150px] truncate">
+                    {businessName}
+                  </span>
+                  <span className="text-[10px] text-slate-500 group-hover:text-slate-300">
+                    ▼
+                  </span>
+                </button>
+
+                {/* Workspace Switcher Menu Dropdown */}
+                {workspaceDropdownOpen && (
+                  <div className="absolute left-0 mt-2 w-64 rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl p-2 z-50 animate-fade-in text-xs space-y-1">
+                    <div className="px-3 py-1.5 text-[11px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800/80">
+                      Workspaces
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto space-y-0.5 py-1">
+                      {memberships.map((m) => {
+                        const isCurrent = m.id === activeBusinessId;
+                        return (
+                          <button
+                            key={m.id}
+                            disabled={switching}
+                            onClick={() => handleSwitchWorkspace(m.id)}
+                            className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between transition-colors cursor-pointer ${
+                              isCurrent
+                                ? "bg-indigo-600/15 text-indigo-300 font-semibold"
+                                : "text-slate-300 hover:bg-slate-800"
+                            }`}
+                          >
+                            <div className="truncate pr-2">
+                              <p className="truncate text-xs">{m.name}</p>
+                              <span className="text-[10px] text-slate-500 font-normal">
+                                {m.role}
+                              </span>
+                            </div>
+                            {isCurrent && (
+                              <span className="text-indigo-400 font-bold">✓</span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    <div className="pt-1 border-t border-slate-800/80">
+                      <Link
+                        href="/onboarding"
+                        onClick={() => setWorkspaceDropdownOpen(false)}
+                        className="w-full px-3 py-2 rounded-xl text-left text-xs font-semibold text-indigo-400 hover:bg-indigo-500/10 transition-colors flex items-center gap-1.5"
+                      >
+                        <span>+</span> Create New Workspace
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Desktop Navigation links */}
@@ -68,7 +188,12 @@ export default function AppTopBar({ user, businessName }: AppTopBarProps) {
           <div className="hidden md:flex items-center gap-3">
             <div className="text-right">
               <p className="text-xs font-medium text-slate-300">{user.name}</p>
-              <p className="text-xs text-slate-500">{user.email}</p>
+              <div className="flex items-center justify-end gap-1.5">
+                <span className="text-[10px] text-slate-500">{user.email}</span>
+                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-slate-800 text-indigo-400 border border-slate-700">
+                  {activeRole}
+                </span>
+              </div>
             </div>
             <button
               onClick={handleLogout}
@@ -105,6 +230,44 @@ export default function AppTopBar({ user, businessName }: AppTopBarProps) {
       {/* Mobile Menu Dropdown */}
       {mobileMenuOpen && (
         <div className="md:hidden border-b border-slate-800 bg-slate-950/95 backdrop-blur-xl px-4 pt-2 pb-6 space-y-4 animate-fade-in shadow-2xl">
+          {/* Workspaces List in Mobile Drawer */}
+          <div className="space-y-1.5 p-3 rounded-2xl bg-slate-900/70 border border-slate-800/80">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1">
+              Switch Workspace ({memberships.length})
+            </p>
+            <div className="space-y-1 max-h-36 overflow-y-auto">
+              {memberships.map((m) => {
+                const isCurrent = m.id === activeBusinessId;
+                return (
+                  <button
+                    key={m.id}
+                    onClick={() => {
+                      setMobileMenuOpen(false);
+                      handleSwitchWorkspace(m.id);
+                    }}
+                    className={`w-full px-3 py-2 rounded-xl text-left flex items-center justify-between text-xs transition-colors ${
+                      isCurrent
+                        ? "bg-indigo-600/20 text-indigo-300 font-bold"
+                        : "text-slate-300 hover:bg-slate-800"
+                    }`}
+                  >
+                    <span>{m.name}</span>
+                    <span className="text-[10px] text-slate-400 font-normal">
+                      {m.role}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+            <Link
+              href="/onboarding"
+              onClick={() => setMobileMenuOpen(false)}
+              className="block pt-1 text-center text-xs font-semibold text-indigo-400 hover:underline"
+            >
+              + Create New Workspace
+            </Link>
+          </div>
+
           {/* Navigation Links */}
           <nav className="flex flex-col space-y-1">
             {NAV_ITEMS.map((item) => {
@@ -131,9 +294,14 @@ export default function AppTopBar({ user, businessName }: AppTopBarProps) {
 
           {/* User Info & Logout on Mobile */}
           <div className="pt-3 border-t border-slate-800/80 flex flex-col gap-3">
-            <div className="px-2">
-              <p className="text-xs font-semibold text-slate-200">{user.name}</p>
-              <p className="text-[11px] text-slate-500">{user.email}</p>
+            <div className="px-2 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold text-slate-200">{user.name}</p>
+                <p className="text-[11px] text-slate-500">{user.email}</p>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-800 text-indigo-400 border border-slate-700">
+                {activeRole}
+              </span>
             </div>
             <button
               onClick={() => {
@@ -142,7 +310,7 @@ export default function AppTopBar({ user, businessName }: AppTopBarProps) {
               }}
               className="w-full py-2.5 rounded-xl bg-slate-900 border border-slate-800 text-xs font-semibold text-rose-400 hover:bg-slate-800 transition-all cursor-pointer"
             >
-              Sign out of Workspace
+              Sign out
             </button>
           </div>
         </div>

@@ -1,15 +1,13 @@
-import { auth } from "@/lib/auth";
-import { businessService } from "@/modules/businesses/services/business.service";
-import { partyService } from "@/modules/parties/services/party.service";
-import { transactionService } from "@/modules/transactions/services/transaction.service";
 import { headers } from "next/headers";
 import Link from "next/link";
 import { formatCurrency } from "@/shared/utils/currency";
+import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
+import { partyService } from "@/modules/parties/services/party.service";
+import { transactionService } from "@/modules/transactions/services/transaction.service";
 
 export default async function DashboardPage() {
-  const session = await auth.api.getSession({ headers: await headers() });
-  const memberships = await businessService.getBusinessesForUser(session!.user.id);
-  const activeBusiness = memberships[0].business;
+  const reqHeaders = await headers();
+  const { business: activeBusiness, user } = await getActiveBusinessContext(reqHeaders);
 
   // Query real data from domain services
   const [aggregates, { transactions: recentTransactions }] = await Promise.all([
@@ -25,7 +23,7 @@ export default async function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-slate-100">
-            Welcome back, {session!.user.name.split(" ")[0]}
+            Welcome back, {user.name.split(" ")[0]}
           </h1>
           <p className="text-sm text-slate-400 mt-1">
             {activeBusiness.name} &mdash; Financial Overview & Operations
