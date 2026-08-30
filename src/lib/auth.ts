@@ -17,6 +17,7 @@ export const auth = betterAuth({
 
   emailVerification: {
     sendOnSignUp: true,
+    autoSignInAfterVerification: true,
 
     sendVerificationEmail: async ({ user, url }) => {
       await sendTemplateEmail({
@@ -30,5 +31,13 @@ export const auth = betterAuth({
     },
 
     expiresIn: 60 * 60,
+  },
+
+  // TODO: Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env and Vercel
+  socialProviders: {
+    google: {
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+    },
   },
 });
