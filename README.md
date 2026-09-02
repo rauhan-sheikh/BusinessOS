@@ -1,6 +1,6 @@
 # BusinessOS &mdash; Modern SME Financial Operating System & Double-Entry Ledger
 
-![BusinessOS Banner](https://raw.githubusercontent.com/rauhan-sheikh/BusinessOS/main/public/banner.png)
+![BusinessOS Banner](./public/banner.png)
 
 [![Next.js 16](https://img.shields.io/badge/Next.js-16.2.6-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React 19](https://img.shields.io/badge/React-19.0.0-blue?style=flat-square&logo=react)](https://react.dev/)
