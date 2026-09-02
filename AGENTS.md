@@ -13,3 +13,7 @@ Every screen, page, modal, table, navigation bar, header, and footer in this pro
 2. **Tables & Ledgers**: All tables must be wrapped in `overflow-x-auto` containers and styled so data remains legible and easily scrollable on narrow screens without breaking parent layout width.
 3. **Forms & Modals**: Modals and form grids must use responsive flex/grid layouts (e.g. `grid-cols-1 sm:grid-cols-2`, full width on mobile, proper padding `p-4 sm:p-6`) and prevent horizontal viewport overflow.
 4. **Toolbars & Filters**: Filter bars and action buttons must wrap cleanly (`flex-col sm:flex-row`, `w-full sm:w-auto`).
+
+# CRITICAL MANDATORY REQUIREMENT: README Synchronization
+
+Whenever any worthwhile changes, new features, schema updates, API routes, or architectural adjustments are made to the codebase, ALWAYS update and keep [`README.md`](file:///c:/Users/Admin/Desktop/Engineering/Projects/BusinessOS/README.md) synchronized and accurate.
