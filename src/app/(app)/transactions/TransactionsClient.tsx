@@ -9,7 +9,7 @@ export interface LedgerTransaction {
   id: string;
   transactionType: string;
   amountMinor: string | number | bigint;
-  OpeningBalanceType: string | null;
+  direction: string | null;
   notes: string | null;
   referenceNumber: string | null;
   reversedTransactionId: string | null;
@@ -66,11 +66,11 @@ export default function TransactionsClient({
 
   const [form, setForm] = useState({
     partyId: parties[0]?.id || "",
-    transactionType: "SALE" as "SALE" | "PURCHASE" | "PAYMENT_RECEIEVED" | "PAYMENT_MADE" | "ADJUSTMENT",
+    transactionType: "SALE" as "SALE" | "PURCHASE" | "PAYMENT_RECEIVED" | "PAYMENT_MADE" | "ADJUSTMENT",
     amount: "",
     referenceNumber: "",
     notes: "",
-    adjustmentType: "RECEIVABLE" as "RECEIVABLE" | "PAYABLE",
+    direction: "RECEIVABLE" as "RECEIVABLE" | "PAYABLE",
   });
 
   // Fetch transactions with applied filters & pagination
@@ -170,8 +170,8 @@ export default function TransactionsClient({
           amount: parseFloat(form.amount),
           referenceNumber: form.referenceNumber || undefined,
           notes: form.notes || undefined,
-          adjustmentType:
-            form.transactionType === "ADJUSTMENT" ? form.adjustmentType : undefined,
+          direction:
+            form.transactionType === "ADJUSTMENT" ? form.direction : undefined,
         }),
       });
 
@@ -192,7 +192,7 @@ export default function TransactionsClient({
         amount: "",
         referenceNumber: "",
         notes: "",
-        adjustmentType: "RECEIVABLE",
+        direction: "RECEIVABLE",
       });
 
       // Refresh list
@@ -249,7 +249,7 @@ export default function TransactionsClient({
         const isDebit =
           tx.transactionType === "SALE" ||
           tx.transactionType === "PAYMENT_MADE" ||
-          (tx.transactionType === "OPENING_BALANCE" && tx.OpeningBalanceType === "RECEIVABLE");
+          (tx.transactionType === "OPENING_BALANCE" && tx.direction === "RECEIVABLE");
 
         return {
           transactionId: tx.id,
@@ -360,7 +360,7 @@ export default function TransactionsClient({
               <option value="ALL">All Types</option>
               <option value="SALE">📦 Sale</option>
               <option value="PURCHASE">🛒 Purchase</option>
-              <option value="PAYMENT_RECEIEVED">💰 Payment Received</option>
+              <option value="PAYMENT_RECEIVED">💰 Payment Received</option>
               <option value="PAYMENT_MADE">💳 Payment Made</option>
               <option value="OPENING_BALANCE">🏦 Opening Balance</option>
               <option value="ADJUSTMENT">⚙️ Adjustment</option>
@@ -467,7 +467,7 @@ export default function TransactionsClient({
                   const isDebit =
                     tx.transactionType === "SALE" ||
                     tx.transactionType === "PAYMENT_MADE" ||
-                    (tx.transactionType === "OPENING_BALANCE" && tx.OpeningBalanceType === "RECEIVABLE");
+                    (tx.transactionType === "OPENING_BALANCE" && tx.direction === "RECEIVABLE");
 
                   const isReversal = tx.transactionType === "REVERSAL";
 
@@ -516,7 +516,7 @@ export default function TransactionsClient({
                               ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                               : tx.transactionType === "PURCHASE"
                               ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                              : tx.transactionType === "PAYMENT_RECEIEVED"
+                              : tx.transactionType === "PAYMENT_RECEIVED"
                               ? "bg-sky-500/10 text-sky-400 border-sky-500/20"
                               : tx.transactionType === "PAYMENT_MADE"
                               ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
@@ -525,7 +525,7 @@ export default function TransactionsClient({
                               : "bg-slate-800 text-slate-400 border-slate-700"
                           }`}
                         >
-                          {tx.transactionType === "PAYMENT_RECEIEVED"
+                          {tx.transactionType === "PAYMENT_RECEIVED"
                             ? "PAYMENT IN"
                             : tx.transactionType}
                         </span>
@@ -653,7 +653,7 @@ export default function TransactionsClient({
                   className={inputCls}
                 >
                   <option value="SALE">📦 Sale (Invoice / To Collect)</option>
-                  <option value="PAYMENT_RECEIEVED">💰 Payment Received (Reduces Receivable)</option>
+                  <option value="PAYMENT_RECEIVED">💰 Payment Received (Reduces Receivable)</option>
                   <option value="PURCHASE">🛒 Purchase (Bill / To Pay)</option>
                   <option value="PAYMENT_MADE">💳 Payment Made (Reduces Payable)</option>
                   <option value="ADJUSTMENT">⚙️ Manual Adjustment</option>
@@ -666,11 +666,11 @@ export default function TransactionsClient({
                     Adjustment Direction *
                   </label>
                   <select
-                    value={form.adjustmentType}
+                    value={form.direction}
                     onChange={(e) =>
                       setForm({
                         ...form,
-                        adjustmentType: e.target.value as typeof form.adjustmentType,
+                        direction: e.target.value as typeof form.direction,
                       })
                     }
                     className={inputCls}

@@ -32,7 +32,8 @@ export class TransactionService {
       createdById: userId,
       transactionType: validated.transactionType,
       amountMinor,
-      openingBalanceType: validated.adjustmentType ?? null,
+      direction: validated.direction ?? null,
+      transactionDate: validated.transactionDate ?? null,
       notes: validated.notes || null,
       referenceNumber: validated.referenceNumber || null,
     });

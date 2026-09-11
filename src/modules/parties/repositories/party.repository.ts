@@ -1,6 +1,7 @@
 import { prisma } from "@/db";
 import type { CreatePartyInput, UpdatePartyInput } from "../schemas/party.schema";
 import { toMinorUnits } from "@/shared/utils/currency";
+import { effectOf } from "@/modules/transactions/ledger";
 
 export interface PartyFilterOptions {
   search?: string;
@@ -57,14 +58,17 @@ export const partyRepository = {
   },
 
   async create(businessId: string, userId: string, data: CreatePartyInput) {
-    const openingMinor = data.openingBalanceMinor
-      ? toMinorUnits(data.openingBalanceMinor.toString())
+    const openingMinor = data.openingBalanceAmount
+      ? toMinorUnits(data.openingBalanceAmount as string | number)
       : BigInt(0);
 
     const openingType = data.openingBalanceType || "RECEIVABLE";
 
+    // The opening balance is scored by the same engine as every other entry,
+    // rather than by a second copy of the balance rules living here.
+    const effect = openingMinor > 0n ? effectOf("OPENING_BALANCE", openingType) : null;
+
     return prisma.$transaction(async (tx) => {
-      // 1. Create Party
       const party = await tx.party.create({
         data: {
           businessId,
@@ -78,34 +82,31 @@ export const partyRepository = {
         },
       });
 
-      // 2. Create Initial Party Balance
-      const initialReceivable = openingMinor > BigInt(0) && openingType === "RECEIVABLE" ? openingMinor : BigInt(0);
-      const initialPayable = openingMinor > BigInt(0) && openingType === "PAYABLE" ? openingMinor : BigInt(0);
-
       const balance = await tx.partyBalance.create({
         data: {
           businessId,
           partyId: party.id,
-          receivableMinor: initialReceivable,
-          payableMinor: initialPayable,
+          receivableMinor:
+            effect?.column === "receivableMinor" ? BigInt(effect.sign) * openingMinor : 0n,
+          payableMinor:
+            effect?.column === "payableMinor" ? BigInt(effect.sign) * openingMinor : 0n,
         },
       });
 
-      // 3. Create Opening Balance Transaction if amount > 0
-      let openingTransaction = null;
-      if (openingMinor > BigInt(0)) {
-        openingTransaction = await tx.transaction.create({
-          data: {
-            businessId,
-            partyId: party.id,
-            transactionType: "OPENING_BALANCE",
-            amountMinor: openingMinor,
-            OpeningBalanceType: openingType,
-            notes: "Opening balance on registration",
-            createdById: userId,
-          },
-        });
-      }
+      const openingTransaction =
+        openingMinor > 0n
+          ? await tx.transaction.create({
+              data: {
+                businessId,
+                partyId: party.id,
+                transactionType: "OPENING_BALANCE",
+                amountMinor: openingMinor,
+                direction: openingType,
+                notes: "Opening balance on registration",
+                createdById: userId,
+              },
+            })
+          : null;
 
       return { ...party, balance, openingTransaction };
     });

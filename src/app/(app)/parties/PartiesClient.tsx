@@ -96,7 +96,7 @@ export default function PartiesClient({
       };
 
       if (form.openingBalance && Number(form.openingBalance) > 0) {
-        payload.openingBalanceMinor = Number(form.openingBalance);
+        payload.openingBalanceAmount = form.openingBalance;
         payload.openingBalanceType = form.openingBalanceType;
       }
 

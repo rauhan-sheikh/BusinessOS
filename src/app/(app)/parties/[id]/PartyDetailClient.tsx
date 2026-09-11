@@ -9,7 +9,7 @@ export interface TransactionItem {
   id: string;
   transactionType: string;
   amountMinor: string | number | bigint;
-  OpeningBalanceType: string | null;
+  direction: string | null;
   notes: string | null;
   referenceNumber: string | null;
   reversedTransactionId: string | null;
@@ -50,12 +50,12 @@ export default function PartyDetailClient({
 
   // Transaction form state
   const [txType, setTxType] = useState<
-    "SALE" | "PURCHASE" | "PAYMENT_RECEIEVED" | "PAYMENT_MADE" | "ADJUSTMENT"
-  >("PAYMENT_RECEIEVED");
+    "SALE" | "PURCHASE" | "PAYMENT_RECEIVED" | "PAYMENT_MADE" | "ADJUSTMENT"
+  >("PAYMENT_RECEIVED");
   const [txAmount, setTxAmount] = useState("");
   const [txNotes, setTxNotes] = useState("");
   const [txRef, setTxRef] = useState("");
-  const [adjustmentType, setAdjustmentType] = useState<"RECEIVABLE" | "PAYABLE">("RECEIVABLE");
+  const [direction, setDirection] = useState<"RECEIVABLE" | "PAYABLE">("RECEIVABLE");
   const [txSubmitting, setTxSubmitting] = useState(false);
   const [txError, setTxError] = useState("");
 
@@ -90,7 +90,7 @@ export default function PartyDetailClient({
           amount: parseFloat(txAmount),
           notes: txNotes || undefined,
           referenceNumber: txRef || undefined,
-          adjustmentType: txType === "ADJUSTMENT" ? adjustmentType : undefined,
+          direction: txType === "ADJUSTMENT" ? direction : undefined,
         }),
       });
 
@@ -184,7 +184,7 @@ export default function PartyDetailClient({
       const isDebit =
         tx.transactionType === "SALE" ||
         tx.transactionType === "PAYMENT_MADE" ||
-        (tx.transactionType === "OPENING_BALANCE" && tx.OpeningBalanceType === "RECEIVABLE");
+        (tx.transactionType === "OPENING_BALANCE" && tx.direction === "RECEIVABLE");
 
       return {
         statementParty: party.name,
@@ -319,7 +319,7 @@ export default function PartyDetailClient({
           <div className="flex gap-2 pt-2 border-t border-slate-800/60">
             <button
               onClick={() => {
-                setTxType("PAYMENT_RECEIEVED");
+                setTxType("PAYMENT_RECEIVED");
                 setIsTxModalOpen(true);
               }}
               className="flex-1 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold hover:bg-emerald-500/20 transition-all text-center"
@@ -397,7 +397,7 @@ export default function PartyDetailClient({
               </thead>
               <tbody className="divide-y divide-slate-800/60 text-slate-300">
                 {party.transactions.map((tx) => {
-                  const isPaymentIn = tx.transactionType === "PAYMENT_RECEIEVED";
+                  const isPaymentIn = tx.transactionType === "PAYMENT_RECEIVED";
                   const isSale = tx.transactionType === "SALE";
                   const isPurchase = tx.transactionType === "PURCHASE";
                   const isPaymentOut = tx.transactionType === "PAYMENT_MADE";
@@ -443,7 +443,7 @@ export default function PartyDetailClient({
                       </td>
                       {/* Credit (e.g. Payments received) */}
                       <td className="py-3.5 px-3 text-right font-medium text-emerald-400 whitespace-nowrap">
-                        {isSale || isPaymentOut || (isOpening && tx.OpeningBalanceType === "RECEIVABLE")
+                        {isSale || isPaymentOut || (isOpening && tx.direction === "RECEIVABLE")
                           ? formatCurrency(tx.amountMinor, currency)
                           : "—"}
                       </td>
@@ -492,7 +492,7 @@ export default function PartyDetailClient({
                   onChange={(e) => setTxType(e.target.value as typeof txType)}
                   className={inputCls}
                 >
-                  <option value="PAYMENT_RECEIEVED">💰 Payment Received (In)</option>
+                  <option value="PAYMENT_RECEIVED">💰 Payment Received (In)</option>
                   <option value="SALE">📦 Sale / Invoice (Receivable)</option>
                   <option value="PAYMENT_MADE">💸 Payment Made (Out)</option>
                   <option value="PURCHASE">🛒 Purchase / Bill (Payable)</option>
@@ -506,8 +506,8 @@ export default function PartyDetailClient({
                     Adjustment Direction
                   </label>
                   <select
-                    value={adjustmentType}
-                    onChange={(e) => setAdjustmentType(e.target.value as "RECEIVABLE" | "PAYABLE")}
+                    value={direction}
+                    onChange={(e) => setDirection(e.target.value as "RECEIVABLE" | "PAYABLE")}
                     className={inputCls}
                   >
                     <option value="RECEIVABLE">Increase Customer Receivable (To Collect)</option>

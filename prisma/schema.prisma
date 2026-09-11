@@ -16,16 +16,39 @@ enum BusinessRole {
 enum TransactionType {
   SALE
   PURCHASE
-  PAYMENT_RECEIEVED
+  PAYMENT_RECEIVED
   PAYMENT_MADE
   OPENING_BALANCE
   ADJUSTMENT
   REVERSAL
 }
 
-enum OpeningBalanceType {
+/// Which side of a party's balance an entry moves. Applies to OPENING_BALANCE
+/// and ADJUSTMENT (caller-chosen) and to REVERSAL (derived from the original).
+enum BalanceDirection {
   RECEIVABLE
   PAYABLE
+}
+
+/// Business-accountability events. Kept as an enum so a typo cannot silently
+/// create an unqueryable action, and so the set is discoverable.
+enum AuditAction {
+  BUSINESS_CREATED
+  BUSINESS_SETTINGS_UPDATED
+  WORKSPACE_SWITCHED
+  MEMBER_ADDED
+  MEMBER_REMOVED
+  MEMBER_ROLE_CHANGED
+  MEMBER_INVITED
+  INVITATION_REVOKED
+  INVITATION_ACCEPTED
+  INVITATION_ACCEPTED_NEW_USER
+  PARTY_CREATED
+  PARTY_UPDATED
+  PARTY_ARCHIVED
+  TRANSACTION_RECORDED
+  TRANSACTION_REVERSED
+  BALANCE_RECOMPUTED
 }
 
 enum InvitationStatus {
@@ -36,19 +59,19 @@ enum InvitationStatus {
 }
 
 model User {
-  id            String         @id
+  id            String    @id
   name          String
-  email         String         @unique
-  emailVerified Boolean        @default(false)
+  email         String    @unique
+  emailVerified Boolean   @default(false)
   image         String?
-  phone         String?        @unique
-  isActive      Boolean        @default(true)
+  phone         String?   @unique
+  isActive      Boolean   @default(true)
   lastLogin     DateTime?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  sessions      Session[]
-  accounts      Account[]
+  sessions Session[]
+  accounts Account[]
 
   businesses      BusinessUser[]
   auditLogs       AuditLog[]
@@ -84,10 +107,13 @@ model BusinessUser {
   userId     String
   role       BusinessRole @default(OWNER)
   joinedAt   DateTime     @default(now())
-  business   Business     @relation(fields: [businessId], references: [id])
-  user       User         @relation(fields: [userId], references: [id])
+  business   Business     @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  user       User         @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@unique([businessId, userId])
+  // findAllByUserId runs on every authenticated request; the composite unique
+  // above cannot serve a userId-only lookup (wrong left-most column).
+  @@index([userId])
 }
 
 model Party {
@@ -103,11 +129,12 @@ model Party {
   isArchived   Boolean       @default(false)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
-  business     Business      @relation(fields: [businessId], references: [id])
+  business     Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
   transactions Transaction[]
   balance      PartyBalance?
 
   @@index([businessId])
+  @@index([businessId, isArchived, updatedAt(sort: Desc)])
 }
 
 model PartyBalance {
@@ -117,44 +144,60 @@ model PartyBalance {
   receivableMinor BigInt   @default(0)
   payableMinor    BigInt   @default(0)
   updatedAt       DateTime @updatedAt
-  party           Party    @relation(fields: [partyId], references: [id])
+  party           Party    @relation(fields: [partyId], references: [id], onDelete: Restrict)
 
   @@index([businessId])
 }
 
 model Transaction {
-  id                    String              @id @default(uuid())
-  businessId            String
-  partyId               String
-  transactionType       TransactionType
-  amountMinor           BigInt
-  OpeningBalanceType    OpeningBalanceType?
-  notes                 String?
-  referenceNumber       String?
-  reversedTransactionId String?
-  createdById           String
-  createdAt             DateTime            @default(now())
-  business              Business            @relation(fields: [businessId], references: [id])
-  createdBy             User                @relation(fields: [createdById], references: [id])
-  party                 Party               @relation(fields: [partyId], references: [id])
+  id              String            @id @default(uuid())
+  businessId      String
+  partyId         String
+  transactionType TransactionType
+  amountMinor     BigInt
+  /// Which balance column this entry moves. Required for OPENING_BALANCE,
+  /// ADJUSTMENT and REVERSAL; null for types whose direction is implied.
+  direction       BalanceDirection?
+  /// The business date of the entry, which may be back-dated. Distinct from
+  /// createdAt, which records when the row was written and never moves.
+  transactionDate DateTime          @default(now())
+  notes           String?
+  referenceNumber String?
 
-  @@index([businessId])
+  /// Set only on a REVERSAL, pointing at the entry it reverses. Unique, so a
+  /// transaction can be reversed at most once - enforced by the database
+  /// rather than by a check-then-act read.
+  reversedTransactionId String?      @unique
+  reversedTransaction   Transaction? @relation("TransactionReversal", fields: [reversedTransactionId], references: [id], onDelete: Restrict)
+  reversal              Transaction? @relation("TransactionReversal")
+
+  createdById String
+  createdAt   DateTime @default(now())
+
+  business  Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdBy User     @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  party     Party    @relation(fields: [partyId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, transactionDate(sort: Desc)])
+  @@index([businessId, partyId, transactionDate(sort: Desc)])
+  @@index([businessId, transactionType, transactionDate(sort: Desc)])
   @@index([partyId])
+  @@index([createdById])
 }
 
 model AuditLog {
-  id         String   @id @default(uuid())
+  id         String      @id @default(uuid())
   businessId String
   userId     String
-  actionType String
+  actionType AuditAction
   metadata   Json
   ipAddress  String?
   userAgent  String?
-  createdAt  DateTime @default(now())
-  business   Business @relation(fields: [businessId], references: [id])
-  user       User     @relation(fields: [userId], references: [id])
+  createdAt  DateTime    @default(now())
+  business   Business    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  user       User        @relation(fields: [userId], references: [id], onDelete: Restrict)
 
-  @@index([businessId])
+  @@index([businessId, createdAt(sort: Desc)])
 }
 
 model EmailList {
@@ -224,8 +267,11 @@ model Invitation {
   updatedAt  DateTime         @updatedAt
 
   business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  inviter  User     @relation(fields: [inviterId], references: [id], onDelete: Cascade)
+  // Restrict, not Cascade: deleting a user must not erase the record of who
+  // granted workspace access to whom.
+  inviter  User     @relation(fields: [inviterId], references: [id], onDelete: Restrict)
 
   @@index([businessId])
+  @@index([businessId, status])
   @@index([email])
 }

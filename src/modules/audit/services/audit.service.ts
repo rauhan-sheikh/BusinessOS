@@ -1,10 +1,10 @@
 import { prisma } from "@/db";
-import type { Prisma } from "@/generated/prisma/client";
+import type { AuditAction, Prisma } from "@/generated/prisma/client";
 
 export interface CreateAuditLogParams {
   businessId: string;
   userId: string;
-  actionType: string;
+  actionType: AuditAction;
   metadata?: Record<string, unknown>;
   ipAddress?: string | null;
   userAgent?: string | null;

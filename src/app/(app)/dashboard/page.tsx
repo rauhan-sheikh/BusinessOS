@@ -153,7 +153,7 @@ export default async function DashboardPage() {
               const isCredit =
                 tx.transactionType === "SALE" ||
                 tx.transactionType === "PAYMENT_MADE" ||
-                (tx.transactionType === "OPENING_BALANCE" && tx.OpeningBalanceType === "RECEIVABLE");
+                (tx.transactionType === "OPENING_BALANCE" && tx.direction === "RECEIVABLE");
 
               return (
                 <div key={tx.id} className="py-3.5 flex items-center justify-between gap-4">
@@ -164,7 +164,7 @@ export default async function DashboardPage() {
                           ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                           : tx.transactionType === "PURCHASE"
                           ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                          : tx.transactionType === "PAYMENT_RECEIEVED"
+                          : tx.transactionType === "PAYMENT_RECEIVED"
                           ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                           : tx.transactionType === "PAYMENT_MADE"
                           ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
@@ -173,7 +173,7 @@ export default async function DashboardPage() {
                           : "bg-slate-800 text-slate-300 border border-slate-700"
                       }`}
                     >
-                      {tx.transactionType === "PAYMENT_RECEIEVED"
+                      {tx.transactionType === "PAYMENT_RECEIVED"
                         ? "PAYMENT IN"
                         : tx.transactionType === "PAYMENT_MADE"
                         ? "PAYMENT OUT"
