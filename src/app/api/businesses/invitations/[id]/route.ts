@@ -11,19 +11,12 @@ export async function DELETE(
   try {
     const { id } = await props.params;
     const reqHeaders = await headers();
-    const { business, user, role } = await getActiveBusinessContext(reqHeaders);
-
-    if (role !== "OWNER" && role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Only Owners and Admins can revoke workspace invitations." },
-        { status: 403 }
-      );
-    }
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const ipAddress = reqHeaders.get("x-forwarded-for") || null;
     const userAgent = reqHeaders.get("user-agent") || null;
 
-    const result = await invitationService.revokeInvitation(business.id, id, user.id, {
+    const result = await invitationService.revokeInvitation(business.id, id, actor, {
       ipAddress,
       userAgent,
     });

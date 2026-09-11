@@ -5,6 +5,10 @@ export const addMemberSchema = z.object({
   role: z.enum(["OWNER", "ADMIN", "ACCOUNTANT"]).default("ACCOUNTANT"),
 });
 
+export const updateMemberRoleSchema = z.object({
+  role: z.enum(["OWNER", "ADMIN", "ACCOUNTANT"]),
+});
+
 export const updateBusinessProfileSchema = z.object({
   name: z.string().min(1, "Business name is required").max(100).optional(),
   legalName: z.string().max(150).optional().or(z.literal("")),
@@ -18,4 +22,5 @@ export const updateBusinessProfileSchema = z.object({
 });
 
 export type AddMemberInput = z.infer<typeof addMemberSchema>;
+export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
 export type UpdateBusinessProfileInput = z.infer<typeof updateBusinessProfileSchema>;

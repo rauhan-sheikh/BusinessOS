@@ -7,9 +7,9 @@ import { AppError } from "@/shared/errors/app-error";
 export async function GET() {
   try {
     const reqHeaders = await headers();
-    const { business } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
-    const logs = await businessService.getAuditLogs(business.id, 50);
+    const logs = await businessService.getAuditLogs(business.id, actor, 50);
 
     return NextResponse.json({ logs }, { status: 200 });
   } catch (err: unknown) {

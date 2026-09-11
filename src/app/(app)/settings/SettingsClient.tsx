@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { BusinessRole } from "@/generated/prisma/client";
+import { PERMISSION, hasPermission } from "@/modules/auth/permissions";
 
 export interface BusinessData {
   id: string;
@@ -32,7 +33,7 @@ export interface InvitationData {
   id: string;
   email: string;
   role: BusinessRole;
-  token: string;
+  inviteUrl: string | null;
   status: "PENDING" | "ACCEPTED" | "REVOKED" | "EXPIRED";
   expiresAt: string;
   createdAt: string;
@@ -107,7 +108,11 @@ export default function SettingsClient({
   const [auditLogs] = useState<AuditLogData[]>(initialAuditLogs);
   const [auditSearch, setAuditSearch] = useState("");
 
-  const isOwnerOrAdmin = currentUserRole === "OWNER" || currentUserRole === "ADMIN";
+  // Derived from the same matrix the server enforces, so the UI cannot offer
+  // an action the API will reject.
+  const canEditSettings = hasPermission(currentUserRole, PERMISSION.BUSINESS_SETTINGS_UPDATE);
+  const canManageTeam = hasPermission(currentUserRole, PERMISSION.MEMBER_INVITE);
+  const canViewAudit = hasPermission(currentUserRole, PERMISSION.AUDIT_VIEW);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -240,7 +245,7 @@ export default function SettingsClient({
         {[
           { id: "profile", label: "Business Profile" },
           { id: "team", label: `Team Members & Invites (${members.length + pendingInvitations.length})` },
-          { id: "audit", label: "Audit Trail" },
+          ...(canViewAudit ? [{ id: "audit", label: "Audit Trail" }] : []),
         ].map((tab) => (
           <button
             key={tab.id}
@@ -266,9 +271,9 @@ export default function SettingsClient({
                 Update legal registration details and workspace preferences
               </p>
             </div>
-            {!isOwnerOrAdmin && (
+            {!canEditSettings && (
               <span className="text-[11px] font-medium text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg">
-                Read-Only (Accountant)
+                Read-Only ({currentUserRole})
               </span>
             )}
           </div>
@@ -282,7 +287,7 @@ export default function SettingsClient({
                 <input
                   type="text"
                   required
-                  disabled={!isOwnerOrAdmin}
+                  disabled={!canEditSettings}
                   value={profileForm.name}
                   onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
                   className={inputCls}
@@ -295,7 +300,7 @@ export default function SettingsClient({
                 </label>
                 <input
                   type="text"
-                  disabled={!isOwnerOrAdmin}
+                  disabled={!canEditSettings}
                   value={profileForm.legalName}
                   onChange={(e) => setProfileForm({ ...profileForm, legalName: e.target.value })}
                   className={inputCls}
@@ -311,7 +316,7 @@ export default function SettingsClient({
                 <input
                   type="text"
                   maxLength={15}
-                  disabled={!isOwnerOrAdmin}
+                  disabled={!canEditSettings}
                   value={profileForm.gstin}
                   onChange={(e) => setProfileForm({ ...profileForm, gstin: e.target.value.toUpperCase() })}
                   className={inputCls}
@@ -325,7 +330,7 @@ export default function SettingsClient({
                 <input
                   type="text"
                   maxLength={10}
-                  disabled={!isOwnerOrAdmin}
+                  disabled={!canEditSettings}
                   value={profileForm.pan}
                   onChange={(e) => setProfileForm({ ...profileForm, pan: e.target.value.toUpperCase() })}
                   className={inputCls}
@@ -340,7 +345,7 @@ export default function SettingsClient({
                 </label>
                 <input
                   type="tel"
-                  disabled={!isOwnerOrAdmin}
+                  disabled={!canEditSettings}
                   value={profileForm.phone}
                   onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
                   className={inputCls}
@@ -353,7 +358,7 @@ export default function SettingsClient({
                 </label>
                 <input
                   type="email"
-                  disabled={!isOwnerOrAdmin}
+                  disabled={!canEditSettings}
                   value={profileForm.email}
                   onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
                   className={inputCls}
@@ -367,7 +372,7 @@ export default function SettingsClient({
               </label>
               <textarea
                 rows={2}
-                disabled={!isOwnerOrAdmin}
+                disabled={!canEditSettings}
                 value={profileForm.address}
                 onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
                 className={`${inputCls} resize-none`}
@@ -380,7 +385,7 @@ export default function SettingsClient({
                   Base Currency
                 </label>
                 <select
-                  disabled={!isOwnerOrAdmin}
+                  disabled={!canEditSettings}
                   value={profileForm.currency}
                   onChange={(e) => setProfileForm({ ...profileForm, currency: e.target.value })}
                   className={inputCls}
@@ -398,7 +403,7 @@ export default function SettingsClient({
                   Timezone
                 </label>
                 <select
-                  disabled={!isOwnerOrAdmin}
+                  disabled={!canEditSettings}
                   value={profileForm.timezone}
                   onChange={(e) => setProfileForm({ ...profileForm, timezone: e.target.value })}
                   className={inputCls}
@@ -422,7 +427,7 @@ export default function SettingsClient({
               </p>
             )}
 
-            {isOwnerOrAdmin && (
+            {canEditSettings && (
               <div className="pt-2 flex justify-end">
                 <button
                   type="submit"
@@ -450,7 +455,7 @@ export default function SettingsClient({
                 </p>
               </div>
 
-              {isOwnerOrAdmin && (
+              {canManageTeam && (
                 <button
                   onClick={() => {
                     setIsInviteModalOpen(true);
@@ -471,7 +476,7 @@ export default function SettingsClient({
                     <th className="py-3 px-4 font-semibold uppercase tracking-wider">Member</th>
                     <th className="py-3 px-4 font-semibold uppercase tracking-wider">Role</th>
                     <th className="py-3 px-4 font-semibold uppercase tracking-wider">Joined Date</th>
-                    {isOwnerOrAdmin && (
+                    {canManageTeam && (
                       <th className="py-3 px-4 font-semibold uppercase tracking-wider text-right">
                         Action
                       </th>
@@ -505,7 +510,7 @@ export default function SettingsClient({
                           year: "numeric",
                         })}
                       </td>
-                      {isOwnerOrAdmin && (
+                      {canManageTeam && (
                         <td className="py-3.5 px-4 text-right">
                           {m.role !== "OWNER" && (
                             <button
@@ -572,15 +577,15 @@ export default function SettingsClient({
                           })}
                         </td>
                         <td className="py-3.5 px-4 text-right space-x-3">
-                          <button
-                            onClick={() =>
-                              handleCopy(`${window.location.origin}/invite/${inv.token}`)
-                            }
-                            className="text-[11px] text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
-                          >
-                            Copy Link
-                          </button>
-                          {isOwnerOrAdmin && (
+                          {inv.inviteUrl && (
+                            <button
+                              onClick={() => handleCopy(inv.inviteUrl!)}
+                              className="text-[11px] text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
+                            >
+                              Copy Link
+                            </button>
+                          )}
+                          {canManageTeam && (
                             <button
                               onClick={() => handleRevokeInvitation(inv.id, inv.email)}
                               className="text-[11px] text-rose-400 hover:text-rose-300 underline cursor-pointer"
@@ -722,7 +727,7 @@ export default function SettingsClient({
       )}
 
       {/* TAB 3: AUDIT TRAIL */}
-      {activeTab === "audit" && (
+      {activeTab === "audit" && canViewAudit && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>

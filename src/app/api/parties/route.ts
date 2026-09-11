@@ -4,27 +4,21 @@ import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { partyService } from "@/modules/parties/services/party.service";
 import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
+import { serializeBigInt } from "@/shared/utils/serialize";
 
 // Helper to serialize objects with BigInt to standard JSON
-function serializeBigInt<T>(obj: T): T {
-  return JSON.parse(
-    JSON.stringify(obj, (_, value) =>
-      typeof value === "bigint" ? value.toString() : value
-    )
-  );
-}
 
 export async function GET(request: Request) {
   try {
     const reqHeaders = await headers();
-    const { business } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const { searchParams } = new URL(request.url);
     const search = searchParams.get("search") || undefined;
     const type = (searchParams.get("type") as "all" | "receivable" | "payable") || "all";
     const includeArchived = searchParams.get("includeArchived") === "true";
 
-    const parties = await partyService.listParties(business.id, {
+    const parties = await partyService.listParties(business.id, actor, {
       search,
       type,
       includeArchived,
@@ -43,13 +37,13 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const reqHeaders = await headers();
-    const { business, user } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
     const ipAddress = reqHeaders.get("x-forwarded-for") || null;
     const userAgent = reqHeaders.get("user-agent") || null;
 
-    const party = await partyService.createParty(business.id, user.id, body, {
+    const party = await partyService.createParty(business.id, actor, body, {
       ipAddress,
       userAgent,
     });

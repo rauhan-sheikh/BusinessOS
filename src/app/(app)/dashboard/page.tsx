@@ -7,12 +7,12 @@ import { transactionService } from "@/modules/transactions/services/transaction.
 
 export default async function DashboardPage() {
   const reqHeaders = await headers();
-  const { business: activeBusiness, user } = await getActiveBusinessContext(reqHeaders);
+  const { business: activeBusiness, user, actor } = await getActiveBusinessContext(reqHeaders);
 
   // Query real data from domain services
   const [aggregates, { transactions: recentTransactions }] = await Promise.all([
-    partyService.getBusinessPartyAggregates(activeBusiness.id),
-    transactionService.listTransactions(activeBusiness.id, { limit: 5 }),
+    partyService.getBusinessPartyAggregates(activeBusiness.id, actor),
+    transactionService.listTransactions(activeBusiness.id, actor, { limit: 5 }),
   ]);
 
   const currency = activeBusiness.currency || "INR";

@@ -4,14 +4,8 @@ import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { partyService } from "@/modules/parties/services/party.service";
 import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
+import { serializeBigInt } from "@/shared/utils/serialize";
 
-function serializeBigInt<T>(obj: T): T {
-  return JSON.parse(
-    JSON.stringify(obj, (_, value) =>
-      typeof value === "bigint" ? value.toString() : value
-    )
-  );
-}
 
 export async function GET(
   _request: Request,
@@ -20,9 +14,9 @@ export async function GET(
   try {
     const { id } = await props.params;
     const reqHeaders = await headers();
-    const { business } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
-    const party = await partyService.getPartyById(id, business.id);
+    const party = await partyService.getPartyById(id, business.id, actor);
 
     return NextResponse.json({ party: serializeBigInt(party) }, { status: 200 });
   } catch (err: unknown) {
@@ -41,13 +35,13 @@ export async function PATCH(
   try {
     const { id } = await props.params;
     const reqHeaders = await headers();
-    const { business, user } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
     const ipAddress = reqHeaders.get("x-forwarded-for") || null;
     const userAgent = reqHeaders.get("user-agent") || null;
 
-    const party = await partyService.updateParty(id, business.id, user.id, body, {
+    const party = await partyService.updateParty(id, business.id, actor, body, {
       ipAddress,
       userAgent,
     });
@@ -72,12 +66,12 @@ export async function DELETE(
   try {
     const { id } = await props.params;
     const reqHeaders = await headers();
-    const { business, user } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const ipAddress = reqHeaders.get("x-forwarded-for") || null;
     const userAgent = reqHeaders.get("user-agent") || null;
 
-    await partyService.archiveParty(id, business.id, user.id, {
+    await partyService.archiveParty(id, business.id, actor, {
       ipAddress,
       userAgent,
     });

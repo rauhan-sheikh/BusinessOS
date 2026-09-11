@@ -2,11 +2,14 @@ import { auth } from "@/lib/auth";
 import { businessService } from "@/modules/businesses/services/business.service";
 import { AppError } from "@/shared/errors/app-error";
 import type { Business, BusinessRole, User } from "@/generated/prisma/client";
+import type { Actor } from "@/modules/auth/permissions";
 
 export interface AuthenticatedBusinessContext {
   user: User;
   business: Business;
   role: BusinessRole;
+  /** Who is acting, for the privileged service methods. */
+  actor: Actor;
 }
 
 function getCookie(headers: Headers, name: string): string | null {
@@ -47,5 +50,6 @@ export async function getActiveBusinessContext(
     user: session.user as unknown as User,
     business: activeMembership.business,
     role: activeMembership.role,
+    actor: { userId: session.user.id, role: activeMembership.role },
   };
 }

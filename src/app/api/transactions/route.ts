@@ -5,19 +5,13 @@ import { transactionService } from "@/modules/transactions/services/transaction.
 import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
 import type { TransactionType } from "@/generated/prisma/client";
+import { serializeBigInt } from "@/shared/utils/serialize";
 
-function serializeBigInt<T>(obj: T): T {
-  return JSON.parse(
-    JSON.stringify(obj, (_, value) =>
-      typeof value === "bigint" ? value.toString() : value
-    )
-  );
-}
 
 export async function GET(request: Request) {
   try {
     const reqHeaders = await headers();
-    const { business } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const { searchParams } = new URL(request.url);
     const partyId = searchParams.get("partyId") || undefined;
@@ -36,7 +30,7 @@ export async function GET(request: Request) {
       : 25;
     const offset = (page - 1) * limit;
 
-    const { transactions, totalCount } = await transactionService.listTransactions(business.id, {
+    const { transactions, totalCount } = await transactionService.listTransactions(business.id, actor, {
       partyId,
       type,
       search,
@@ -70,7 +64,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const reqHeaders = await headers();
-    const { business, user } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
     const ipAddress = reqHeaders.get("x-forwarded-for") || null;
@@ -78,7 +72,7 @@ export async function POST(request: Request) {
 
     const transaction = await transactionService.recordTransaction(
       business.id,
-      user.id,
+      actor,
       body,
       { ipAddress, userAgent }
     );

@@ -4,14 +4,8 @@ import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { transactionService } from "@/modules/transactions/services/transaction.service";
 import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
+import { serializeBigInt } from "@/shared/utils/serialize";
 
-function serializeBigInt<T>(obj: T): T {
-  return JSON.parse(
-    JSON.stringify(obj, (_, value) =>
-      typeof value === "bigint" ? value.toString() : value
-    )
-  );
-}
 
 export async function POST(
   request: Request,
@@ -20,7 +14,7 @@ export async function POST(
   try {
     const { id } = await props.params;
     const reqHeaders = await headers();
-    const { business, user } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     let body = {};
     try {
@@ -35,7 +29,7 @@ export async function POST(
     const reversal = await transactionService.reverseTransaction(
       id,
       business.id,
-      user.id,
+      actor,
       body,
       { ipAddress, userAgent }
     );

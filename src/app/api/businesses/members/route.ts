@@ -8,9 +8,9 @@ import { AppError } from "@/shared/errors/app-error";
 export async function GET() {
   try {
     const reqHeaders = await headers();
-    const { business } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
-    const members = await businessService.getMembers(business.id);
+    const members = await businessService.getMembers(business.id, actor);
 
     return NextResponse.json({ members }, { status: 200 });
   } catch (err: unknown) {
@@ -25,20 +25,13 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const reqHeaders = await headers();
-    const { business, user, role } = await getActiveBusinessContext(reqHeaders);
-
-    if (role !== "OWNER" && role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Only Owners and Admins can add members to this workspace." },
-        { status: 403 }
-      );
-    }
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
     const ipAddress = reqHeaders.get("x-forwarded-for") || null;
     const userAgent = reqHeaders.get("user-agent") || null;
 
-    const membership = await businessService.addMember(business.id, user.id, body, {
+    const membership = await businessService.addMember(business.id, actor, body, {
       ipAddress,
       userAgent,
     });

@@ -48,20 +48,13 @@ export async function POST(request: Request) {
 export async function PATCH(request: Request) {
   try {
     const reqHeaders = await headers();
-    const { business, user, role } = await getActiveBusinessContext(reqHeaders);
-
-    if (role === "ACCOUNTANT") {
-      return NextResponse.json(
-        { error: "Only workspace Owners and Admins can update business settings." },
-        { status: 403 }
-      );
-    }
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
     const ipAddress = reqHeaders.get("x-forwarded-for") || null;
     const userAgent = reqHeaders.get("user-agent") || null;
 
-    const updated = await businessService.updateBusiness(business.id, user.id, body, {
+    const updated = await businessService.updateBusiness(business.id, actor, body, {
       ipAddress,
       userAgent,
     });

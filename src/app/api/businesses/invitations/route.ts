@@ -9,9 +9,9 @@ import { AppError } from "@/shared/errors/app-error";
 export async function GET() {
   try {
     const reqHeaders = await headers();
-    const { business } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
-    const invitations = await invitationService.listInvitations(business.id);
+    const invitations = await invitationService.listInvitations(business.id, actor);
 
     return NextResponse.json({ invitations }, { status: 200 });
   } catch (err: unknown) {
@@ -26,14 +26,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const reqHeaders = await headers();
-    const { business, user, role } = await getActiveBusinessContext(reqHeaders);
-
-    if (role !== "OWNER" && role !== "ADMIN") {
-      return NextResponse.json(
-        { error: "Only Owners and Admins can invite members to this workspace." },
-        { status: 403 }
-      );
-    }
+    const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
     const validated = addMemberSchema.parse(body);
@@ -43,7 +36,7 @@ export async function POST(request: Request) {
 
     const result = await invitationService.inviteMember(
       business.id,
-      user.id,
+      actor,
       validated.email,
       validated.role,
       { ipAddress, userAgent }
