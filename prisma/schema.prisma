@@ -73,32 +73,34 @@ model User {
   sessions Session[]
   accounts Account[]
 
-  businesses      BusinessUser[]
-  auditLogs       AuditLog[]
-  transactions    Transaction[]
-  invitationsSent Invitation[]
+  businesses            BusinessUser[]
+  auditLogs             AuditLog[]
+  transactions          Transaction[]
+  invitationsSent       Invitation[]
+  emailTemplatesUpdated EmailTemplateOverride[]
 
   @@map("user")
 }
 
 model Business {
-  id           String         @id @default(uuid())
-  name         String
-  legalName    String?
-  gstin        String?
-  pan          String?
-  phone        String?
-  email        String?
-  address      String?
-  currency     String         @default("INR")
-  timezone     String         @default("Asia/Kolkata")
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  users        BusinessUser[]
-  parties      Party[]
-  transactions Transaction[]
-  auditLogs    AuditLog[]
-  invitations  Invitation[]
+  id             String                  @id @default(uuid())
+  name           String
+  legalName      String?
+  gstin          String?
+  pan            String?
+  phone          String?
+  email          String?
+  address        String?
+  currency       String                  @default("INR")
+  timezone       String                  @default("Asia/Kolkata")
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  users          BusinessUser[]
+  parties        Party[]
+  transactions   Transaction[]
+  auditLogs      AuditLog[]
+  invitations    Invitation[]
+  emailTemplates EmailTemplateOverride[]
 }
 
 model BusinessUser {
@@ -198,6 +200,28 @@ model AuditLog {
   user       User        @relation(fields: [userId], references: [id], onDelete: Restrict)
 
   @@index([businessId, createdAt(sort: Desc)])
+}
+
+/// A workspace's customised wording for one of the BUSINESS-scoped emails in
+/// src/lib/email/templates. Absent means the built-in template is used, so this
+/// table only ever holds deliberate overrides and deleting a row restores the
+/// default. Platform email (verification, password reset) is intentionally not
+/// representable here - see EmailTemplateScope.
+model EmailTemplateOverride {
+  id          String   @id @default(uuid())
+  businessId  String
+  /// Matches EmailTemplateKey in src/lib/email/templates.
+  templateKey String
+  subject     String
+  html        String
+  updatedById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business  Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  updatedBy User?    @relation(fields: [updatedById], references: [id], onDelete: SetNull)
+
+  @@unique([businessId, templateKey])
 }
 
 model EmailList {

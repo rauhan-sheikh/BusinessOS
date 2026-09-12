@@ -34,6 +34,8 @@ export const PERMISSION = {
 
   BUSINESS_SETTINGS_VIEW: "BUSINESS_SETTINGS_VIEW",
   BUSINESS_SETTINGS_UPDATE: "BUSINESS_SETTINGS_UPDATE",
+  /** Customising the wording of workspace-scoped email. */
+  EMAIL_TEMPLATE_MANAGE: "EMAIL_TEMPLATE_MANAGE",
 
   AUDIT_VIEW: "AUDIT_VIEW",
 } as const;
@@ -66,6 +68,8 @@ const ADMINISTRATION: readonly Permission[] = [
   PERMISSION.MEMBER_ROLE_UPDATE,
   PERMISSION.INVITATION_VIEW,
   PERMISSION.AUDIT_VIEW,
+  // Whoever sends the invitations can word them.
+  PERMISSION.EMAIL_TEMPLATE_MANAGE,
 ];
 
 /**

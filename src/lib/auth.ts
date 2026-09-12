@@ -39,11 +39,8 @@ export const auth = betterAuth({
     sendResetPassword: async ({ user, url }) => {
       await sendTemplateEmail({
         to: user.email,
-        templateAlias: env.RESEND_PASSWORD_RESET_TEMPLATE_ALIAS,
-        variables: {
-          USER_NAME: user.name,
-          RESET_URL: url,
-        },
+        template: "PASSWORD_RESET",
+        variables: { USER_NAME: user.name, RESET_URL: url },
       });
     },
   },
@@ -55,11 +52,8 @@ export const auth = betterAuth({
     sendVerificationEmail: async ({ user, url }) => {
       await sendTemplateEmail({
         to: user.email,
-        templateAlias: env.RESEND_VERIFICATION_TEMPLATE_ALIAS,
-        variables: {
-          USER_NAME: user.name,
-          VERIFICATION_URL: url,
-        },
+        template: "EMAIL_VERIFICATION",
+        variables: { USER_NAME: user.name, VERIFICATION_URL: url },
       });
     },
 

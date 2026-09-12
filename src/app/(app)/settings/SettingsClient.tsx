@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { BusinessRole } from "@/generated/prisma/client";
 import { PERMISSION, hasPermission } from "@/modules/auth/permissions";
+import EmailTemplatesPanel, { type EmailTemplateView } from "./EmailTemplatesPanel";
 
 export interface BusinessData {
   id: string;
@@ -63,6 +64,7 @@ interface SettingsClientProps {
   initialMembers: MemberData[];
   initialInvitations: InvitationData[];
   initialAuditLogs: AuditLogData[];
+  initialEmailTemplates: EmailTemplateView[];
   currentUserRole: BusinessRole;
 }
 
@@ -71,9 +73,10 @@ export default function SettingsClient({
   initialMembers,
   initialInvitations,
   initialAuditLogs,
+  initialEmailTemplates,
   currentUserRole,
 }: SettingsClientProps) {
-  const [activeTab, setActiveTab] = useState<"profile" | "team" | "audit">("profile");
+  const [activeTab, setActiveTab] = useState<"profile" | "team" | "emails" | "audit">("profile");
 
   // Profile Form State
   const [business, setBusiness] = useState<BusinessData>(initialBusiness);
@@ -113,6 +116,7 @@ export default function SettingsClient({
   const canEditSettings = hasPermission(currentUserRole, PERMISSION.BUSINESS_SETTINGS_UPDATE);
   const canManageTeam = hasPermission(currentUserRole, PERMISSION.MEMBER_INVITE);
   const canViewAudit = hasPermission(currentUserRole, PERMISSION.AUDIT_VIEW);
+  const canManageEmails = hasPermission(currentUserRole, PERMISSION.EMAIL_TEMPLATE_MANAGE);
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -245,6 +249,7 @@ export default function SettingsClient({
         {[
           { id: "profile", label: "Business Profile" },
           { id: "team", label: `Team Members & Invites (${members.length + pendingInvitations.length})` },
+          ...(canManageEmails ? [{ id: "emails", label: "Email Templates" }] : []),
           ...(canViewAudit ? [{ id: "audit", label: "Audit Trail" }] : []),
         ].map((tab) => (
           <button
@@ -727,6 +732,13 @@ export default function SettingsClient({
       )}
 
       {/* TAB 3: AUDIT TRAIL */}
+      {activeTab === "emails" && canManageEmails && (
+        <EmailTemplatesPanel
+          initialTemplates={initialEmailTemplates}
+          canManage={canManageEmails}
+        />
+      )}
+
       {activeTab === "audit" && canViewAudit && (
         <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

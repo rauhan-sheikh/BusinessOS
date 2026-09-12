@@ -3,7 +3,7 @@ import { prisma } from "@/db";
 import { AppError } from "@/shared/errors/app-error";
 import { auditService } from "@/modules/audit/services/audit.service";
 import { emailListService } from "@/modules/emailList/services/emailList.service";
-import { sendInvitationEmail } from "@/lib/email";
+import { sendTemplateEmail } from "@/lib/email";
 import type { BusinessRole } from "@/generated/prisma/client";
 import {
   PERMISSION,
@@ -103,12 +103,17 @@ export class InvitationService {
 
     // 7. Dispatch invitation email
     try {
-      await sendInvitationEmail({
+      await sendTemplateEmail({
         to: normalizedEmail,
-        inviterName: inviter.name,
-        businessName: business.name,
-        role,
-        inviteUrl,
+        template: "TEAM_INVITATION",
+        // Applies this workspace's customised wording when it has one.
+        businessId,
+        variables: {
+          INVITER_NAME: inviter.name,
+          BUSINESS_NAME: business.name,
+          ROLE: role,
+          INVITE_URL: inviteUrl,
+        },
       });
     } catch (err) {
       console.error("Failed to send invitation email via Resend:", err);

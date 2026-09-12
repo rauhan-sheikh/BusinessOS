@@ -27,15 +27,6 @@ const serverEnvSchema = z.object({
   RESEND_API_KEY: z.string().min(1, "RESEND_API_KEY is required"),
   EMAIL_FROM: z.string().min(1, "EMAIL_FROM is required"),
 
-  /**
-   * Resend template aliases. Defaulted so an existing deployment keeps working
-   * without new variables, but each template must exist in Resend - a missing
-   * one now fails the send loudly rather than silently dropping the mail.
-   */
-  RESEND_VERIFICATION_TEMPLATE_ALIAS: z.string().min(1).default("email-verification"),
-  RESEND_PASSWORD_RESET_TEMPLATE_ALIAS: z.string().min(1).default("password-reset"),
-  RESEND_INVITATION_TEMPLATE_ALIAS: z.string().min(1).default("team-invitation"),
-
   // Optional: Google sign-in is simply unavailable when these are absent.
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
