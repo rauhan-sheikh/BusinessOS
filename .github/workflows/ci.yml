@@ -177,6 +177,28 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
+      - name: Diagnose credentials
+        # "Could not retrieve Project Settings" has three usual causes and the
+        # CLI does not distinguish them: a token not scoped to the team that
+        # owns the project, an id with stray whitespace from copy-paste, or
+        # simply the wrong id. This reports shape without revealing values, and
+        # asks the API who the token actually is.
+        env:
+          ORG: ${{ secrets.VERCEL_ORG_ID }}
+          PROJ: ${{ secrets.VERCEL_PROJECT_ID }}
+        run: |
+          printf 'VERCEL_ORG_ID      length=%s prefix=%s
+' "${#ORG}" "$(printf %s "$ORG" | cut -c1-5)"
+          printf 'VERCEL_PROJECT_ID  length=%s prefix=%s
+' "${#PROJ}" "$(printf %s "$PROJ" | cut -c1-4)"
+          case "$ORG"  in team_*|*) : ;; esac
+          printf %s "$ORG"  | grep -q '[[:space:]]' && echo "::error::VERCEL_ORG_ID contains whitespace"     || true
+          printf %s "$PROJ" | grep -q '[[:space:]]' && echo "::error::VERCEL_PROJECT_ID contains whitespace" || true
+          echo "--- token identity ---"
+          vercel whoami --token=${{ secrets.VERCEL_TOKEN }} || echo "::error::Token is invalid or expired"
+          echo "--- teams this token can see ---"
+          vercel teams ls --token=${{ secrets.VERCEL_TOKEN }} || echo "::error::Token cannot list teams - it is probably scoped to a personal account, not the team that owns this project"
+
       - name: Pull Vercel environment
         # Fetches the project's production environment variables, which the
         # build needs - src/lib/env.ts validates them at import time.
