@@ -1,0 +1,87 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# A newer push to the same branch supersedes an in-flight run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck, lint and test
+    runs-on: ubuntu-latest
+
+    services:
+      # The integration tests exercise real transaction and constraint
+      # behaviour - lost updates, unique violations, CHECK enforcement - none of
+      # which a mocked client can demonstrate. They skip themselves when
+      # DATABASE_URL is unset, so without this container the suite would pass
+      # while silently testing far less.
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: businessos_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/businessos_test?schema=public
+      # Values the schema in src/lib/env.ts requires at import time. None are
+      # real: nothing in CI sends mail or signs a production session.
+      AUTH_SECRET: ci-secret-value-that-is-long-enough-to-pass-validation
+      BETTER_AUTH_URL: http://localhost:3000
+      NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:3000
+      RESEND_API_KEY: re_ci_placeholder
+      EMAIL_FROM: BusinessOS <ci@example.test>
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Apply migrations
+        # Also proves the migrations apply cleanly from empty, which the
+        # hand-written ones in this repo make worth checking on every change.
+        run: npm run db:deploy
+
+      - name: Check for schema drift
+        # Fails if schema.prisma and the migration history disagree.
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+  # Deployment note: `prisma migrate deploy` is deliberately NOT part of
+  # `npm run build`. Running it there applied migrations inside the build
+  # container, before any deploy gate, on preview builds too, and with no way
+  # back - Vercel's instant rollback reverts code only. Run `npm run db:deploy`
+  # as a release step after a build succeeds.
