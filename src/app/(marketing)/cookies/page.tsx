@@ -32,7 +32,7 @@ export default function CookiePolicyPage() {
             BusinessOS uses only strictly necessary cookies to provide core authentication and platform functionality. We do not use third-party tracking or advertising cookies.
           </p>
 
-          <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-hidden mt-4">
+          <div className="rounded-xl border border-slate-800 bg-slate-900/60 overflow-x-auto mt-4">
             <table className="w-full text-left text-xs">
               <thead className="bg-slate-900/80 text-slate-400 border-b border-slate-800">
                 <tr>
