@@ -177,40 +177,32 @@ jobs:
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
-      - name: Diagnose credentials
-        # "Could not retrieve Project Settings" has three usual causes and the
-        # CLI does not distinguish them: a token not scoped to the team that
-        # owns the project, an id with stray whitespace from copy-paste, or
-        # simply the wrong id. This reports shape without revealing values, and
-        # asks the API who the token actually is.
+      - name: Link the project
+        # Written explicitly rather than via `vercel link`, which needs
+        # interactive input, and rather than relying on VERCEL_ORG_ID /
+        # VERCEL_PROJECT_ID being picked up implicitly - a project-scoped token
+        # cannot always read the settings endpoint those depend on.
         env:
           ORG: ${{ secrets.VERCEL_ORG_ID }}
           PROJ: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
-          printf 'VERCEL_ORG_ID      length=%s prefix=%s
-' "${#ORG}" "$(printf %s "$ORG" | cut -c1-5)"
-          printf 'VERCEL_PROJECT_ID  length=%s prefix=%s
-' "${#PROJ}" "$(printf %s "$PROJ" | cut -c1-4)"
-          case "$ORG"  in team_*|*) : ;; esac
-          printf %s "$ORG"  | grep -q '[[:space:]]' && echo "::error::VERCEL_ORG_ID contains whitespace"     || true
-          printf %s "$PROJ" | grep -q '[[:space:]]' && echo "::error::VERCEL_PROJECT_ID contains whitespace" || true
-          echo "--- token identity ---"
-          vercel whoami --token=${{ secrets.VERCEL_TOKEN }} || echo "::error::Token is invalid or expired"
-          echo "--- teams this token can see ---"
-          vercel teams ls --token=${{ secrets.VERCEL_TOKEN }} || echo "::error::Token cannot list teams - it is probably scoped to a personal account, not the team that owns this project"
-
-      - name: Pull Vercel environment
-        # Fetches the project's production environment variables, which the
-        # build needs - src/lib/env.ts validates them at import time.
-        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
-
-      - name: Build
-        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+          # Trim any stray whitespace a paste may have introduced; an id with a
+          # trailing newline fails the lookup with no useful message.
+          ORG="$(printf %s "$ORG" | tr -d '[:space:]')"
+          PROJ="$(printf %s "$PROJ" | tr -d '[:space:]')"
+          mkdir -p .vercel
+          printf '{"orgId":"%s","projectId":"%s"}' "$ORG" "$PROJ" > .vercel/project.json
+          echo "linked orgId=${ORG:0:5}... projectId=${PROJ:0:4}... (lengths ${#ORG}/${#PROJ})"
 
       - name: Deploy
-        # --prebuilt uploads the output built in the step above rather than
-        # rebuilding on Vercel.
-        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+        # Vercel builds this server-side, using the environment variables
+        # configured on the project - the same thing git auto-deploy did, only
+        # now it happens after migrations rather than racing them.
+        #
+        # Deliberately not `vercel pull` + `vercel build` + `--prebuilt`:
+        # building here would be faster, but pulling requires read access to
+        # project settings, which a narrowly-scoped deploy token does not have.
+        run: vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
 
 # Setup this workflow expects:
 #
