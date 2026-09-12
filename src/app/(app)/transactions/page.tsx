@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { partyService } from "@/modules/parties/services/party.service";
 import { transactionService } from "@/modules/transactions/services/transaction.service";
 import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
@@ -10,8 +9,7 @@ export default async function TransactionsPage(props: {
   searchParams: Promise<{ action?: string; partyId?: string }>;
 }) {
   const { action, partyId } = await props.searchParams;
-  const reqHeaders = await headers();
-  const { business: activeBusiness, actor } = await getActiveBusinessContext(reqHeaders);
+  const { business: activeBusiness, actor } = await getActiveBusinessContext();
 
   const [{ transactions, totalCount }, parties] = await Promise.all([
     transactionService.listTransactions(activeBusiness.id, actor, {
@@ -19,10 +17,12 @@ export default async function TransactionsPage(props: {
       limit: 25,
       offset: 0,
     }),
-    partyService.listParties(activeBusiness.id, actor),
+    // Enough to populate the counterparty filter without loading the
+    // whole directory.
+    partyService.listParties(activeBusiness.id, actor, { limit: 500 }),
   ]);
 
-  const partyOptions = parties.map((p) => ({ id: p.id, name: p.name }));
+  const partyOptions = parties.parties.map((p) => ({ id: p.id, name: p.name }));
 
   return (
     <TransactionsClient

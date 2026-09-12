@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { formatCurrency, toMajorUnits } from "@/shared/utils/currency";
 
@@ -23,19 +23,92 @@ export interface PartyWithBalance {
 
 interface PartiesClientProps {
   initialParties: PartyWithBalance[];
+  initialTotalCount: number;
+  /** Workspace-wide totals, independent of the page being viewed. */
+  aggregates: { totalParties: number; totalReceivable: number; totalPayable: number };
+  pageSize: number;
   currency: string;
   initialOpenModal?: boolean;
 }
 
 export default function PartiesClient({
   initialParties,
+  initialTotalCount,
+  aggregates,
+  pageSize,
   currency,
   initialOpenModal = false,
 }: PartiesClientProps) {
   const [parties, setParties] = useState<PartyWithBalance[]>(initialParties);
+  const [totalCount, setTotalCount] = useState(initialTotalCount);
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<"all" | "receivable" | "payable">("all");
+  const [page, setPage] = useState(1);
+  const [isLoading, setIsLoading] = useState(false);
+  const [listError, setListError] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(initialOpenModal);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+
+  /**
+   * Search and filtering run on the server. The list used to be filtered in
+   * memory, which meant the page had to load every party in the workspace -
+   * and once the query is paged, an in-memory filter would only ever match the
+   * rows that happened to be on screen.
+   */
+  const loadParties = useCallback(
+    async (nextPage: number, signal?: AbortSignal) => {
+      setIsLoading(true);
+      setListError("");
+      try {
+        const params = new URLSearchParams({
+          page: String(nextPage),
+          limit: String(pageSize),
+        });
+        if (search) params.set("search", search);
+        if (filter !== "all") params.set("type", filter);
+
+        const res = await fetch(`/api/parties?${params.toString()}`, { signal });
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(
+            typeof data.error === "string" ? data.error : "Could not load parties."
+          );
+        }
+
+        setParties(data.parties ?? []);
+        setTotalCount(data.totalCount ?? 0);
+      } catch (err: unknown) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        setListError(err instanceof Error ? err.message : "Could not load parties.");
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    [search, filter, pageSize]
+  );
+
+  const isFirstRender = useRef(true);
+
+  useEffect(() => {
+    // Skip the initial pass: the server already rendered page one.
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      return;
+    }
+
+    const controller = new AbortController();
+    // Debounced so typing does not fire a request per keystroke.
+    const timer = setTimeout(() => {
+      setPage(1);
+      void loadParties(1, controller.signal);
+    }, 300);
+
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [search, filter, loadParties]);
 
   // New Party Form State
   const [form, setForm] = useState({
@@ -52,32 +125,10 @@ export default function PartiesClient({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
-  // Calculate totals
-  const totalReceivables = parties.reduce(
-    (acc, p) => acc + (p.balance ? toMajorUnits(p.balance.receivableMinor) : 0),
-    0
-  );
-  const totalPayables = parties.reduce(
-    (acc, p) => acc + (p.balance ? toMajorUnits(p.balance.payableMinor) : 0),
-    0
-  );
-
-  // Filter parties based on search and tab
-  const filteredParties = parties.filter((p) => {
-    const matchesSearch =
-      p.name.toLowerCase().includes(search.toLowerCase()) ||
-      (p.phone && p.phone.includes(search)) ||
-      (p.email && p.email.toLowerCase().includes(search.toLowerCase()));
-
-    if (!matchesSearch) return false;
-
-    const rec = p.balance ? Number(p.balance.receivableMinor) : 0;
-    const pay = p.balance ? Number(p.balance.payableMinor) : 0;
-
-    if (filter === "receivable") return rec > 0;
-    if (filter === "payable") return pay > 0;
-    return true;
-  });
+  // Workspace-wide, so they stay correct while paging through the list.
+  const totalReceivables = toMajorUnits(aggregates.totalReceivable);
+  const totalPayables = toMajorUnits(aggregates.totalPayable);
+  const filteredParties = parties;
 
   const handleCreateParty = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -159,7 +210,7 @@ export default function PartiesClient({
           <p className="text-xs font-medium text-slate-500 uppercase tracking-wider">
             Total Parties
           </p>
-          <p className="text-xl font-bold text-slate-200 mt-1">{parties.length}</p>
+          <p className="text-xl font-bold text-slate-200 mt-1">{aggregates.totalParties}</p>
         </div>
         <div className="rounded-2xl bg-slate-900/60 border border-slate-800/80 p-4">
           <p className="text-xs font-medium text-emerald-400 uppercase tracking-wider">
@@ -288,6 +339,48 @@ export default function PartiesClient({
               </Link>
             );
           })}
+        </div>
+      )}
+
+      {listError && (
+        <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl">
+          {listError}
+        </p>
+      )}
+
+      {totalPages > 1 && (
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+          <p className="text-[11px] text-slate-400">
+            Showing {(page - 1) * pageSize + 1}&ndash;
+            {Math.min(page * pageSize, totalCount)} of {totalCount}
+          </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const next = page - 1;
+                setPage(next);
+                void loadParties(next);
+              }}
+              disabled={page <= 1 || isLoading}
+              className="rounded-xl bg-slate-900 border border-slate-800 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-slate-800 transition-all disabled:opacity-40"
+            >
+              Previous
+            </button>
+            <span className="text-[11px] text-slate-500">
+              Page {page} of {totalPages}
+            </span>
+            <button
+              onClick={() => {
+                const next = page + 1;
+                setPage(next);
+                void loadParties(next);
+              }}
+              disabled={page >= totalPages || isLoading}
+              className="rounded-xl bg-slate-900 border border-slate-800 px-3 py-1.5 text-[11px] font-semibold text-slate-300 hover:bg-slate-800 transition-all disabled:opacity-40"
+            >
+              Next
+            </button>
+          </div>
         </div>
       )}
 

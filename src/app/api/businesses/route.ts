@@ -2,14 +2,14 @@ import { NextResponse } from "next/server";
 import { auth } from "@/lib/auth";
 import { businessService } from "@/modules/businesses/services/business.service";
 import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
-import { ZodError } from "zod";
-import { AppError } from "@/shared/errors/app-error";
 import { headers } from "next/headers";
 import { setActiveBusinessCookie } from "@/shared/api/cookies";
 import { getClientInfo } from "@/shared/api/request";
+import { withApiHandler } from "@/shared/api/handler";
 
-export async function POST(request: Request) {
-  try {
+export const POST = withApiHandler(
+  "POST /api/businesses",
+  async (request: Request) => {
     // Verify authentication server-side
     const session = await auth.api.getSession({ headers: await headers() });
 
@@ -24,28 +24,14 @@ export async function POST(request: Request) {
     setActiveBusinessCookie(response, business.id);
 
     return response;
-  } catch (err: unknown) {
-    if (err instanceof ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
-    }
-    if (err instanceof AppError) {
-      return NextResponse.json(
-        { error: err.message },
-        { status: err.statusCode },
-      );
-    }
-    console.error("POST /api/businesses error:", err);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 },
-    );
   }
-}
+);
 
-export async function PATCH(request: Request) {
-  try {
+export const PATCH = withApiHandler(
+  "PATCH /api/businesses",
+  async (request: Request) => {
     const reqHeaders = await headers();
-    const { business, actor } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext();
 
     const body = await request.json();
     const { ipAddress, userAgent } = getClientInfo(reqHeaders);
@@ -56,20 +42,5 @@ export async function PATCH(request: Request) {
     });
 
     return NextResponse.json({ business: updated }, { status: 200 });
-  } catch (err: unknown) {
-    if (err instanceof ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
-    }
-    if (err instanceof AppError) {
-      return NextResponse.json(
-        { error: err.message },
-        { status: err.statusCode },
-      );
-    }
-    console.error("PATCH /api/businesses error:", err);
-    return NextResponse.json(
-      { error: "Internal Server Error" },
-      { status: 500 },
-    );
   }
-}
+);

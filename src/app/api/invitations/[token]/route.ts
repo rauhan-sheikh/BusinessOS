@@ -2,33 +2,25 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { invitationService } from "@/modules/businesses/services/invitation.service";
-import { AppError } from "@/shared/errors/app-error";
 import { setActiveBusinessCookie } from "@/shared/api/cookies";
 import { getClientInfo } from "@/shared/api/request";
+import { withApiHandler } from "@/shared/api/handler";
 
-export async function GET(
-  _request: Request,
-  props: { params: Promise<{ token: string }> }
-) {
-  try {
+export const GET = withApiHandler(
+  "GET /api/invitations/[token]",
+  async (_request: Request,
+  props: { params: Promise<{ token: string }> }) => {
     const { token } = await props.params;
     const details = await invitationService.getInvitationByToken(token);
 
     return NextResponse.json(details, { status: 200 });
-  } catch (err: unknown) {
-    if (err instanceof AppError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error("GET /api/invitations/[token] error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
-}
+);
 
-export async function POST(
-  _request: Request,
-  props: { params: Promise<{ token: string }> }
-) {
-  try {
+export const POST = withApiHandler(
+  "POST /api/invitations/[token]",
+  async (_request: Request,
+  props: { params: Promise<{ token: string }> }) => {
     const { token } = await props.params;
     const reqHeaders = await headers();
     const session = await auth.api.getSession({ headers: reqHeaders });
@@ -52,11 +44,5 @@ export async function POST(
     setActiveBusinessCookie(response, result.businessId);
 
     return response;
-  } catch (err: unknown) {
-    if (err instanceof AppError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error("POST /api/invitations/[token] error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
-}
+);

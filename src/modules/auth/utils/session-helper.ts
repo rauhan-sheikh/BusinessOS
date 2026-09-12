@@ -1,8 +1,11 @@
+import { cache } from "react";
+import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { businessService } from "@/modules/businesses/services/business.service";
 import { AppError } from "@/shared/errors/app-error";
 import type { Business, BusinessRole, User } from "@/generated/prisma/client";
 import type { Actor } from "@/modules/auth/permissions";
+import { ACTIVE_BUSINESS_COOKIE } from "@/shared/api/cookies";
 
 export interface AuthenticatedBusinessContext {
   user: User;
@@ -19,15 +22,9 @@ function getCookie(headers: Headers, name: string): string | null {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
-/**
- * Validates server session and resolves the user's active business and role.
- * Resolves active business from the `active_business_id` cookie or defaults to first business.
- * Throws AppError(401) if not authenticated or AppError(403) if no active business membership.
- */
-export async function getActiveBusinessContext(
-  headers: Headers
-): Promise<AuthenticatedBusinessContext> {
-  const session = await auth.api.getSession({ headers });
+async function resolveActiveBusinessContext(): Promise<AuthenticatedBusinessContext> {
+  const reqHeaders = await headers();
+  const session = await auth.api.getSession({ headers: reqHeaders });
 
   if (!session || !session.user) {
     throw new AppError("Unauthorized", 401);
@@ -36,14 +33,19 @@ export async function getActiveBusinessContext(
   const memberships = await businessService.getBusinessesForUser(session.user.id);
 
   if (!memberships || memberships.length === 0) {
-    throw new AppError("No active business found for this account. Please complete onboarding.", 403);
+    throw new AppError(
+      "No active business found for this account. Please complete onboarding.",
+      403
+    );
   }
 
-  // Check if active_business_id cookie is present and valid for this user
-  const activeBusinessIdCookie = getCookie(headers, "active_business_id");
+  // The cookie is httpOnly, but it is still only a hint: its value is honoured
+  // only when it names a workspace this user actually belongs to, so a stale or
+  // tampered cookie falls back to their first membership rather than reaching
+  // someone else's tenant.
+  const requestedBusinessId = getCookie(reqHeaders, ACTIVE_BUSINESS_COOKIE);
   const activeMembership =
-    (activeBusinessIdCookie &&
-      memberships.find((m) => m.businessId === activeBusinessIdCookie)) ||
+    (requestedBusinessId && memberships.find((m) => m.businessId === requestedBusinessId)) ||
     memberships[0];
 
   return {
@@ -53,3 +55,22 @@ export async function getActiveBusinessContext(
     actor: { userId: session.user.id, role: activeMembership.role },
   };
 }
+
+/**
+ * Validates the session and resolves the caller's active workspace and role.
+ *
+ * Memoised per request with React's cache(). Rendering a page previously
+ * resolved this three or four times - the proxy checked the session, then the
+ * layout checked it again and called this, then the page called it once more -
+ * costing a session lookup and a membership join each time before any business
+ * data was fetched. cache() is scoped to a single render pass, so nothing is
+ * shared between requests or users.
+ *
+ * It reads the request headers itself rather than taking them as an argument:
+ * cache() keys on argument identity, so passing a Headers object in would make
+ * the memoisation depend on callers happening to share one instance.
+ *
+ * Throws AppError(401) when unauthenticated, or AppError(403) when the account
+ * has no workspace yet.
+ */
+export const getActiveBusinessContext = cache(resolveActiveBusinessContext);

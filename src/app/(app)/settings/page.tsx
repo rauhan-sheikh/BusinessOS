@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { businessService } from "@/modules/businesses/services/business.service";
 import { invitationService } from "@/modules/businesses/services/invitation.service";
 import { emailTemplateService } from "@/modules/businesses/services/email-template.service";
@@ -14,12 +13,11 @@ import SettingsClient, {
 } from "./SettingsClient";
 
 export default async function SettingsPage() {
-  const reqHeaders = await headers();
   const {
     business: activeBusiness,
     role: activeRole,
     actor,
-  } = await getActiveBusinessContext(reqHeaders);
+  } = await getActiveBusinessContext();
 
   // Sections the role cannot see are not fetched at all, rather than fetched
   // and hidden in the client - invitations in particular carry credentials.

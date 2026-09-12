@@ -5,13 +5,15 @@ import { businessService } from "@/modules/businesses/services/business.service"
 import { AppError } from "@/shared/errors/app-error";
 import { z } from "zod";
 import { setActiveBusinessCookie } from "@/shared/api/cookies";
+import { withApiHandler } from "@/shared/api/handler";
 
 const switchBusinessSchema = z.object({
   businessId: z.string().uuid("Invalid business ID"),
 });
 
-export async function POST(request: Request) {
-  try {
+export const POST = withApiHandler(
+  "POST /api/businesses/switch",
+  async (request: Request) => {
     const reqHeaders = await headers();
     const session = await auth.api.getSession({ headers: reqHeaders });
 
@@ -43,14 +45,5 @@ export async function POST(request: Request) {
     setActiveBusinessCookie(response, businessId);
 
     return response;
-  } catch (err: unknown) {
-    if (err instanceof z.ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
-    }
-    if (err instanceof AppError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error("POST /api/businesses/switch error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
-}
+);

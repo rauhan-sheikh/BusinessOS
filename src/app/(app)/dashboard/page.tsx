@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import Link from "next/link";
 import { formatCurrency } from "@/shared/utils/currency";
 import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
@@ -6,8 +5,7 @@ import { partyService } from "@/modules/parties/services/party.service";
 import { transactionService } from "@/modules/transactions/services/transaction.service";
 
 export default async function DashboardPage() {
-  const reqHeaders = await headers();
-  const { business: activeBusiness, user, actor } = await getActiveBusinessContext(reqHeaders);
+  const { business: activeBusiness, user, actor } = await getActiveBusinessContext();
 
   // Query real data from domain services
   const [aggregates, { transactions: recentTransactions }] = await Promise.all([

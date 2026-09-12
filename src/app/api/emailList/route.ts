@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { emailListService } from "@/modules/emailList/services/emailList.service";
-import { ZodError } from "zod";
-import { AppError } from "@/shared/errors/app-error";
 import { rateLimit, clientKey } from "@/shared/utils/rate-limit";
+import { withApiHandler } from "@/shared/api/handler";
 
 /**
  * Public newsletter subscription.
@@ -13,8 +12,9 @@ import { rateLimit, clientKey } from "@/shared/utils/rate-limit";
  * user's email is added on sign-up, that turned this unauthenticated endpoint
  * into an account-existence oracle.
  */
-export async function POST(request: Request) {
-  try {
+export const POST = withApiHandler(
+  "POST /api/emailList",
+  async (request: Request) => {
     const reqHeaders = await headers();
 
     const { allowed, retryAfter } = rateLimit(clientKey(reqHeaders, "emailList"), {
@@ -24,7 +24,7 @@ export async function POST(request: Request) {
 
     if (!allowed) {
       return NextResponse.json(
-        { error: "Too many requests. Please try again shortly." },
+        { error: "Too many requests. Please try again shortly.", code: "RATE_LIMITED" },
         { status: 429, headers: { "Retry-After": String(retryAfter) } }
       );
     }
@@ -34,14 +34,5 @@ export async function POST(request: Request) {
 
     // 202: accepted, with no statement about what was already stored.
     return NextResponse.json({ subscribed: true }, { status: 202 });
-  } catch (err: unknown) {
-    if (err instanceof ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
-    }
-    if (err instanceof AppError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error("POST /api/emailList error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
-}
+);

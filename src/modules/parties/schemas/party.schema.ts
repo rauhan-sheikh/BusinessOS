@@ -29,3 +29,17 @@ export const updatePartySchema = z.object({
 
 export type CreatePartyInput = z.input<typeof createPartySchema>;
 export type UpdatePartyInput = z.infer<typeof updatePartySchema>;
+
+/** Query-string filters for the party directory. Validated, not cast. */
+export const listPartiesQuerySchema = z.object({
+  search: z.string().max(200).optional(),
+  type: z.enum(["all", "receivable", "payable"]).default("all"),
+  includeArchived: z
+    .enum(["true", "false"])
+    .default("false")
+    .transform((value) => value === "true"),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(500).default(50),
+});
+
+export type ListPartiesQuery = z.infer<typeof listPartiesQuerySchema>;

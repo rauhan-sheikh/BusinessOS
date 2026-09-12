@@ -2,31 +2,25 @@ import { NextResponse } from "next/server";
 import { headers } from "next/headers";
 import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { businessService } from "@/modules/businesses/services/business.service";
-import { ZodError } from "zod";
-import { AppError } from "@/shared/errors/app-error";
 import { getClientInfo } from "@/shared/api/request";
+import { withApiHandler } from "@/shared/api/handler";
 
-export async function GET() {
-  try {
-    const reqHeaders = await headers();
-    const { business, actor } = await getActiveBusinessContext(reqHeaders);
+export const GET = withApiHandler(
+  "GET /api/businesses/members",
+  async () => {
+    const { business, actor } = await getActiveBusinessContext();
 
     const members = await businessService.getMembers(business.id, actor);
 
     return NextResponse.json({ members }, { status: 200 });
-  } catch (err: unknown) {
-    if (err instanceof AppError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error("GET /api/businesses/members error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
-}
+);
 
-export async function POST(request: Request) {
-  try {
+export const POST = withApiHandler(
+  "POST /api/businesses/members",
+  async (request: Request) => {
     const reqHeaders = await headers();
-    const { business, actor } = await getActiveBusinessContext(reqHeaders);
+    const { business, actor } = await getActiveBusinessContext();
 
     const body = await request.json();
     const { ipAddress, userAgent } = getClientInfo(reqHeaders);
@@ -37,14 +31,5 @@ export async function POST(request: Request) {
     });
 
     return NextResponse.json({ membership }, { status: 201 });
-  } catch (err: unknown) {
-    if (err instanceof ZodError) {
-      return NextResponse.json({ error: err.issues }, { status: 400 });
-    }
-    if (err instanceof AppError) {
-      return NextResponse.json({ error: err.message }, { status: err.statusCode });
-    }
-    console.error("POST /api/businesses/members error:", err);
-    return NextResponse.json({ error: "Internal Server Error" }, { status: 500 });
   }
-}
+);

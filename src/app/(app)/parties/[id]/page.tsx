@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import { partyService } from "@/modules/parties/services/party.service";
 import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { notFound } from "next/navigation";
@@ -10,8 +9,7 @@ export default async function PartyDetailPage(props: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await props.params;
-  const reqHeaders = await headers();
-  const { business: activeBusiness, actor } = await getActiveBusinessContext(reqHeaders);
+  const { business: activeBusiness, actor } = await getActiveBusinessContext();
 
   let party;
   try {
