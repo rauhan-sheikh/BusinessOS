@@ -6,6 +6,7 @@ import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/shared/components/Logo";
 import type { BusinessRole } from "@/generated/prisma/client";
+import { useToast } from "@/shared/components/ui";
 
 export interface WorkspaceMembership {
   id: string;
@@ -38,6 +39,7 @@ export default function AppTopBar({
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [workspaceDropdownOpen, setWorkspaceDropdownOpen] = useState(false);
   const [switching, setSwitching] = useState(false);
+  const toast = useToast();
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   const router = useRouter();
@@ -69,7 +71,7 @@ export default function AppTopBar({
       router.refresh();
     } catch (err) {
       console.error(err);
-      alert("Failed to switch workspace");
+      toast.error("Could not switch workspace. Please try again.");
     } finally {
       setSwitching(false);
     }

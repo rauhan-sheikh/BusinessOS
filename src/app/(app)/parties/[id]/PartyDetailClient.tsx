@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { formatCurrency, toMajorUnits } from "@/shared/utils/currency";
 import { exportToCSV } from "@/shared/utils/export-csv";
+import { useToast, useConfirm } from "@/shared/components/ui";
 
 export interface TransactionItem {
   id: string;
@@ -48,6 +49,8 @@ export default function PartyDetailClient({
   currency,
 }: PartyDetailClientProps) {
   const [party, setParty] = useState<PartyDetailData>(initialParty);
+  const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
   const [isTxModalOpen, setIsTxModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
 
@@ -152,8 +155,29 @@ export default function PartyDetailClient({
     }
   };
 
-  const handleReverse = async (txId: string) => {
-    if (!confirm("Are you sure you want to reverse this transaction?")) return;
+  const handleReverse = async (tx: TransactionItem) => {
+    const confirmed = await confirm({
+      title: "Reverse this transaction?",
+      isDestructive: true,
+      confirmLabel: "Reverse transaction",
+      message: (
+        <>
+          <p>
+            This posts an opposing entry for{" "}
+            <span className="font-semibold text-fg">
+              {formatCurrency(tx.amountMinor, currency)}
+            </span>{" "}
+            and updates this party&apos;s balance.
+          </p>
+          <p className="mt-2 text-fg-subtle">
+            The original entry is kept. A transaction can only be reversed once.
+          </p>
+        </>
+      ),
+    });
+    if (!confirmed) return;
+
+    const txId = tx.id;
 
     try {
       const res = await fetch(`/api/transactions/${txId}/reverse`, {
@@ -174,7 +198,7 @@ export default function PartyDetailClient({
         setParty(refreshData.party);
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to reverse transaction");
+      toast.error(err instanceof Error ? err.message : "Failed to reverse transaction");
     }
   };
 
@@ -231,12 +255,16 @@ export default function PartyDetailClient({
     ]);
 
     if (!exported) {
-      alert("There are no statement entries to export.");
+      toast.info("There are no statement entries to export.");
+    } else {
+      toast.success("Statement exported.");
     }
   };
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
+
       {/* Navigation Breadcrumb */}
       <div className="flex items-center gap-2 text-xs text-slate-400">
         <Link href="/parties" className="hover:text-slate-200 transition-colors">
@@ -457,7 +485,7 @@ export default function PartyDetailClient({
                       <td className="py-3.5 px-3 text-center">
                         {!isReversal && (
                           <button
-                            onClick={() => handleReverse(tx.id)}
+                            onClick={() => handleReverse(tx)}
                             className="text-[11px] text-rose-400 hover:text-rose-300 underline"
                           >
                             Reverse

@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { formatCurrency, toMajorUnits } from "@/shared/utils/currency";
 import { exportToCSV } from "@/shared/utils/export-csv";
+import { useToast, useConfirm } from "@/shared/components/ui";
 
 export interface LedgerTransaction {
   id: string;
@@ -61,6 +62,8 @@ export default function TransactionsClient({
   const [pageSize, setPageSize] = useState(25);
   const [isPending, startTransition] = useTransition();
   const [isExporting, setIsExporting] = useState(false);
+  const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(initialOpenModal);
@@ -207,11 +210,35 @@ export default function TransactionsClient({
     }
   };
 
-  const handleReverse = async (txId: string) => {
-    if (!confirm("Are you sure you want to reverse this transaction?")) return;
+  const handleReverse = async (tx: LedgerTransaction) => {
+    // Names the amount and counterparty rather than asking "are you sure?"
+    // about an unnamed row, and says what reversing actually does - the entry
+    // is not deleted, an opposing one is posted.
+    const confirmed = await confirm({
+      title: "Reverse this transaction?",
+      isDestructive: true,
+      confirmLabel: "Reverse transaction",
+      message: (
+        <>
+          <p>
+            This posts an opposing entry for{" "}
+            <span className="font-semibold text-fg">
+              {formatCurrency(tx.amountMinor, currency)}
+            </span>{" "}
+            against{" "}
+            <span className="font-semibold text-fg">{tx.party?.name ?? "this party"}</span>,
+            and updates their balance.
+          </p>
+          <p className="mt-2 text-fg-subtle">
+            The original entry is kept. A transaction can only be reversed once.
+          </p>
+        </>
+      ),
+    });
+    if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/transactions/${txId}/reverse`, {
+      const res = await fetch(`/api/transactions/${tx.id}/reverse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: "User requested reversal from ledger" }),
@@ -223,9 +250,10 @@ export default function TransactionsClient({
         throw new Error(data.error || "Failed to reverse transaction");
       }
 
+      toast.success("Transaction reversed.");
       fetchFilteredTransactions(page, pageSize);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to reverse transaction");
+      toast.error(err instanceof Error ? err.message : "Failed to reverse transaction");
     }
   };
 
@@ -310,10 +338,12 @@ export default function TransactionsClient({
       ]);
 
       if (!exported) {
-        alert("No transactions match the current filters to export.");
+        toast.info("No transactions match the current filters to export.");
+      } else {
+        toast.success(`Exported ${records.length} transactions.`);
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to export CSV");
+      toast.error(err instanceof Error ? err.message : "Failed to export CSV");
     } finally {
       setIsExporting(false);
     }
@@ -325,6 +355,8 @@ export default function TransactionsClient({
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
+
       {/* Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -579,7 +611,7 @@ export default function TransactionsClient({
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         {!isReversal && (
                           <button
-                            onClick={() => handleReverse(tx.id)}
+                            onClick={() => handleReverse(tx)}
                             className="text-[11px] text-rose-400 hover:text-rose-300 font-medium underline"
                           >
                             Reverse

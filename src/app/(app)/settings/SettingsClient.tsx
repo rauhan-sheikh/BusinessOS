@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { BusinessRole } from "@/generated/prisma/client";
 import { PERMISSION, hasPermission } from "@/modules/auth/permissions";
 import EmailTemplatesPanel, { type EmailTemplateView } from "./EmailTemplatesPanel";
+import { useToast, useConfirm } from "@/shared/components/ui";
 
 export interface BusinessData {
   id: string;
@@ -106,6 +107,8 @@ export default function SettingsClient({
   const [inviteError, setInviteError] = useState("");
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
 
   // Audit Logs State
   const [auditLogs] = useState<AuditLogData[]>(initialAuditLogs);
@@ -179,7 +182,19 @@ export default function SettingsClient({
   };
 
   const handleRevokeInvitation = async (invitationId: string, email: string) => {
-    if (!confirm(`Are you sure you want to cancel the invitation for ${email}?`)) return;
+    const confirmed = await confirm({
+      title: "Cancel this invitation?",
+      isDestructive: true,
+      confirmLabel: "Cancel invitation",
+      cancelLabel: "Keep it",
+      message: (
+        <>
+          The link sent to <span className="font-semibold text-fg">{email}</span>{" "}
+          stops working immediately. You can send a new one at any time.
+        </>
+      ),
+    });
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/businesses/invitations/${invitationId}`, {
@@ -192,13 +207,30 @@ export default function SettingsClient({
       }
 
       setInvitations(invitations.filter((i) => i.id !== invitationId));
+      toast.success("Invitation cancelled.");
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to revoke invitation");
+      toast.error(err instanceof Error ? err.message : "Failed to revoke invitation");
     }
   };
 
   const handleRemoveMember = async (membershipId: string, memberEmail: string) => {
-    if (!confirm(`Are you sure you want to remove ${memberEmail} from this workspace?`)) return;
+    const confirmed = await confirm({
+      title: "Remove this member?",
+      isDestructive: true,
+      confirmLabel: "Remove member",
+      message: (
+        <>
+          <p>
+            <span className="font-semibold text-fg">{memberEmail}</span> loses
+            access to this workspace straight away.
+          </p>
+          <p className="mt-2 text-fg-subtle">
+            Entries they recorded are kept, and stay attributed to them.
+          </p>
+        </>
+      ),
+    });
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/businesses/members/${membershipId}`, {
@@ -211,8 +243,9 @@ export default function SettingsClient({
       }
 
       setMembers(members.filter((m) => m.id !== membershipId));
+      toast.success("Member removed.");
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to remove member");
+      toast.error(err instanceof Error ? err.message : "Failed to remove member");
     }
   };
 
@@ -236,6 +269,8 @@ export default function SettingsClient({
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
+
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-100">Settings & Workspace</h1>
