@@ -4,6 +4,7 @@ import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { businessService } from "@/modules/businesses/services/business.service";
 import { AppError } from "@/shared/errors/app-error";
 import { ZodError } from "zod";
+import { getClientInfo } from "@/shared/api/request";
 
 /**
  * Change a member's role.
@@ -21,8 +22,7 @@ export async function PATCH(
     const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const membership = await businessService.updateMemberRole(business.id, id, actor, body, {
       ipAddress,
@@ -51,8 +51,7 @@ export async function DELETE(
     const reqHeaders = await headers();
     const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const result = await businessService.removeMember(business.id, id, actor, {
       ipAddress,

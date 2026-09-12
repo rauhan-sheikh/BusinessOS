@@ -4,6 +4,7 @@ import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { businessService } from "@/modules/businesses/services/business.service";
 import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
+import { getClientInfo } from "@/shared/api/request";
 
 export async function GET() {
   try {
@@ -28,8 +29,7 @@ export async function POST(request: Request) {
     const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const membership = await businessService.addMember(business.id, actor, body, {
       ipAddress,

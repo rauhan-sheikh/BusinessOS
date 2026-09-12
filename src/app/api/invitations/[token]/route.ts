@@ -3,6 +3,8 @@ import { headers } from "next/headers";
 import { auth } from "@/lib/auth";
 import { invitationService } from "@/modules/businesses/services/invitation.service";
 import { AppError } from "@/shared/errors/app-error";
+import { setActiveBusinessCookie } from "@/shared/api/cookies";
+import { getClientInfo } from "@/shared/api/request";
 
 export async function GET(
   _request: Request,
@@ -38,8 +40,7 @@ export async function POST(
       );
     }
 
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const result = await invitationService.acceptInvitation(token, session.user.id, {
       ipAddress,
@@ -48,12 +49,7 @@ export async function POST(
 
     const response = NextResponse.json(result, { status: 200 });
     // Set active_business_id cookie to the newly joined business
-    response.cookies.set("active_business_id", result.businessId, {
-      path: "/",
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30, // 30 days
-    });
+    setActiveBusinessCookie(response, result.businessId);
 
     return response;
   } catch (err: unknown) {

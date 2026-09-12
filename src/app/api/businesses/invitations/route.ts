@@ -5,6 +5,7 @@ import { invitationService } from "@/modules/businesses/services/invitation.serv
 import { addMemberSchema } from "@/modules/businesses/schemas/member.schema";
 import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
+import { getClientInfo } from "@/shared/api/request";
 
 export async function GET() {
   try {
@@ -31,8 +32,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const validated = addMemberSchema.parse(body);
 
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const result = await invitationService.inviteMember(
       business.id,

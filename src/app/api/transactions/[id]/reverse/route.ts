@@ -5,6 +5,7 @@ import { transactionService } from "@/modules/transactions/services/transaction.
 import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
 import { serializeBigInt } from "@/shared/utils/serialize";
+import { getClientInfo } from "@/shared/api/request";
 
 
 export async function POST(
@@ -23,8 +24,7 @@ export async function POST(
       // Empty body is allowed for basic reversal
     }
 
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const reversal = await transactionService.reverseTransaction(
       id,

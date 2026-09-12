@@ -4,6 +4,7 @@ import { auth } from "@/lib/auth";
 import { businessService } from "@/modules/businesses/services/business.service";
 import { AppError } from "@/shared/errors/app-error";
 import { z } from "zod";
+import { setActiveBusinessCookie } from "@/shared/api/cookies";
 
 const switchBusinessSchema = z.object({
   businessId: z.string().uuid("Invalid business ID"),
@@ -39,12 +40,7 @@ export async function POST(request: Request) {
     );
 
     // Set cookie
-    response.cookies.set("active_business_id", businessId, {
-      path: "/",
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30, // 30 days
-    });
+    setActiveBusinessCookie(response, businessId);
 
     return response;
   } catch (err: unknown) {

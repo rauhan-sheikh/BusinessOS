@@ -6,6 +6,7 @@ import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
 import type { TransactionType } from "@/generated/prisma/client";
 import { serializeBigInt } from "@/shared/utils/serialize";
+import { getClientInfo } from "@/shared/api/request";
 
 
 export async function GET(request: Request) {
@@ -67,8 +68,7 @@ export async function POST(request: Request) {
     const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const transaction = await transactionService.recordTransaction(
       business.id,

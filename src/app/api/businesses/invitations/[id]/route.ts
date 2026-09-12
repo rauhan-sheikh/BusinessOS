@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { invitationService } from "@/modules/businesses/services/invitation.service";
 import { AppError } from "@/shared/errors/app-error";
+import { getClientInfo } from "@/shared/api/request";
 
 export async function DELETE(
   _request: Request,
@@ -13,8 +14,7 @@ export async function DELETE(
     const reqHeaders = await headers();
     const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const result = await invitationService.revokeInvitation(business.id, id, actor, {
       ipAddress,

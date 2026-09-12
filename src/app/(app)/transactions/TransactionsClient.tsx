@@ -13,6 +13,9 @@ export interface LedgerTransaction {
   notes: string | null;
   referenceNumber: string | null;
   reversedTransactionId: string | null;
+  /** Business date of the entry; may be back-dated. */
+  transactionDate: string;
+  /** When the row was written. Never moves. */
   createdAt: string;
   party: {
     id: string;
@@ -230,20 +233,34 @@ export default function TransactionsClient({
   const handleExportCSV = async () => {
     setIsExporting(true);
     try {
-      // Fetch all records matching the current active filter (limit = 5000)
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      params.set("limit", "5000");
-      if (search) params.set("search", search);
-      if (typeFilter !== "ALL") params.set("type", typeFilter);
-      if (partyFilter !== "ALL") params.set("partyId", partyFilter);
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
+      // Page through every record matching the current filter. A single
+      // request asking for 5000 was silently capped at the server's limit of
+      // 1000, so any larger export quietly lost rows.
+      const PAGE_SIZE = 1000;
+      const records: LedgerTransaction[] = [];
 
-      const res = await fetch(`/api/transactions?${params.toString()}`);
-      const data = await res.json();
+      for (let page = 1; ; page++) {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("limit", String(PAGE_SIZE));
+        if (search) params.set("search", search);
+        if (typeFilter !== "ALL") params.set("type", typeFilter);
+        if (partyFilter !== "ALL") params.set("partyId", partyFilter);
+        if (startDate) params.set("startDate", startDate);
+        if (endDate) params.set("endDate", endDate);
 
-      const records: LedgerTransaction[] = data.transactions || transactions;
+        const res = await fetch(`/api/transactions?${params.toString()}`);
+        if (!res.ok) {
+          // Exporting a partial ledger without saying so is worse than failing.
+          throw new Error("Could not fetch the full ledger for export. Please try again.");
+        }
+
+        const data = await res.json();
+        const batch: LedgerTransaction[] = data.transactions ?? [];
+        records.push(...batch);
+
+        if (batch.length < PAGE_SIZE || records.length >= (data.totalCount ?? 0)) break;
+      }
 
       const rows = records.map((tx) => {
         const isDebit =
@@ -253,8 +270,8 @@ export default function TransactionsClient({
 
         return {
           transactionId: tx.id,
-          date: new Date(tx.createdAt).toISOString().split("T")[0],
-          time: new Date(tx.createdAt).toLocaleTimeString("en-IN", { hour12: false }),
+          date: new Date(tx.transactionDate).toISOString().split("T")[0],
+          recordedAt: new Date(tx.createdAt).toISOString(),
           counterparty: tx.party?.name || "N/A",
           phone: tx.party?.phone || "",
           gstin: tx.party?.gstin || "",
@@ -273,10 +290,10 @@ export default function TransactionsClient({
         };
       });
 
-      exportToCSV("BusinessOS_Enterprise_Ledger", rows, [
+      const exported = exportToCSV("BusinessOS_Enterprise_Ledger", rows, [
         { key: "transactionId", label: "Transaction ID" },
         { key: "date", label: "Date (YYYY-MM-DD)" },
-        { key: "time", label: "Time" },
+        { key: "recordedAt", label: "Recorded At (UTC)" },
         { key: "counterparty", label: "Counterparty Name" },
         { key: "phone", label: "Phone" },
         { key: "gstin", label: "GSTIN" },
@@ -291,6 +308,10 @@ export default function TransactionsClient({
         { key: "recordedBy", label: "Recorded By" },
         { key: "recordedByEmail", label: "User Email" },
       ]);
+
+      if (!exported) {
+        alert("No transactions match the current filters to export.");
+      }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Failed to export CSV");
     } finally {
@@ -481,7 +502,7 @@ export default function TransactionsClient({
                       {/* Date */}
                       <td className="py-3.5 px-4 whitespace-nowrap text-slate-400">
                         <p className="font-medium text-slate-200">
-                          {new Date(tx.createdAt).toLocaleDateString("en-IN", {
+                          {new Date(tx.transactionDate).toLocaleDateString("en-IN", {
                             day: "numeric",
                             month: "short",
                             year: "numeric",

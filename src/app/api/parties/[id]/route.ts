@@ -5,6 +5,7 @@ import { partyService } from "@/modules/parties/services/party.service";
 import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
 import { serializeBigInt } from "@/shared/utils/serialize";
+import { getClientInfo } from "@/shared/api/request";
 
 
 export async function GET(
@@ -38,8 +39,7 @@ export async function PATCH(
     const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const party = await partyService.updateParty(id, business.id, actor, body, {
       ipAddress,
@@ -68,8 +68,7 @@ export async function DELETE(
     const reqHeaders = await headers();
     const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     await partyService.archiveParty(id, business.id, actor, {
       ipAddress,

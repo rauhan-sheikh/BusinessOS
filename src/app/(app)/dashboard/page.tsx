@@ -187,7 +187,7 @@ export default async function DashboardPage() {
                         {tx.party.name}
                       </Link>
                       <p className="text-xs text-slate-500">
-                        {new Date(tx.createdAt).toLocaleDateString("en-IN", {
+                        {new Date(tx.transactionDate).toLocaleDateString("en-IN", {
                           day: "numeric",
                           month: "short",
                           year: "numeric",

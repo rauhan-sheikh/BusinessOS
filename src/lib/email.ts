@@ -1,11 +1,24 @@
+/**
+ * Resend integration boundary.
+ *
+ * Presentation lives in Resend templates, not in this codebase: the rest of the
+ * application supplies variables and never composes HTML. Beyond keeping email
+ * design out of application code (Plan.md section 26), this removes an injection
+ * surface - the previous invitation mail interpolated inviterName and
+ * businessName into a raw HTML string unescaped, so a crafted workspace name
+ * could inject markup into a genuine BusinessOS email.
+ */
 import { Resend } from "resend";
+import { env } from "@/lib/env";
 
-export const resend = new Resend(process.env.RESEND_API_KEY);
+export const resend = new Resend(env.RESEND_API_KEY);
+
+type TemplateVariables = Record<string, string | number>;
 
 type SendTemplateEmailInput = {
   to: string;
   templateAlias: string;
-  variables: Record<string, string | number>;
+  variables: TemplateVariables;
 };
 
 export async function sendTemplateEmail({
@@ -13,14 +26,21 @@ export async function sendTemplateEmail({
   templateAlias,
   variables,
 }: SendTemplateEmailInput) {
-  return resend.emails.send({
-    from: process.env.EMAIL_FROM as string,
+  const { data, error } = await resend.emails.send({
+    from: env.EMAIL_FROM,
     to,
     template: {
       id: templateAlias,
       variables,
     },
   });
+
+  if (error) {
+    // Surfaced to the caller so a failed send is not mistaken for a sent one.
+    throw new Error(`Failed to send "${templateAlias}" email: ${error.message}`);
+  }
+
+  return data;
 }
 
 type SendInvitationEmailInput = {
@@ -38,41 +58,14 @@ export async function sendInvitationEmail({
   role,
   inviteUrl,
 }: SendInvitationEmailInput) {
-  const from = process.env.EMAIL_FROM || "BusinessOS <no-reply@businessos.com>";
-
-  return resend.emails.send({
-    from,
+  return sendTemplateEmail({
     to,
-    subject: `You've been invited to join ${businessName} on BusinessOS`,
-    html: `
-      <div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; max-width: 560px; margin: 0 auto; padding: 32px 20px; background-color: #0B0F17; color: #F1F5F9; border-radius: 16px; border: 1px solid #1E293B;">
-        <div style="margin-bottom: 24px;">
-          <span style="font-size: 20px; font-weight: 800; background: linear-gradient(to right, #F8FAFC, #CBD5E1, #A5B4FC); -webkit-background-clip: text; color: #A5B4FC;">
-            BusinessOS
-          </span>
-        </div>
-        <h2 style="font-size: 22px; font-weight: 700; color: #F8FAFC; margin-bottom: 12px;">
-          Join ${businessName} Workspace
-        </h2>
-        <p style="font-size: 14px; line-height: 1.6; color: #94A3B8; margin-bottom: 24px;">
-          <strong>${inviterName}</strong> has invited you to join the <strong>${businessName}</strong> workspace with the role of <strong>${role}</strong>.
-        </p>
-        <div style="margin-bottom: 32px;">
-          <a href="${inviteUrl}" style="display: inline-block; background-color: #4F46E5; color: #FFFFFF; font-weight: 600; font-size: 14px; padding: 12px 28px; border-radius: 10px; text-decoration: none;">
-            Accept Invitation &rarr;
-          </a>
-        </div>
-        <p style="font-size: 12px; color: #64748B; line-height: 1.5; margin-bottom: 8px;">
-          If the button above does not work, copy and paste this link into your browser:
-        </p>
-        <p style="font-size: 11px; color: #818CF8; word-break: break-all;">
-          ${inviteUrl}
-        </p>
-        <hr style="border: none; border-top: 1px solid #1E293B; margin: 28px 0;" />
-        <p style="font-size: 11px; color: #475569;">
-          This invitation link will expire in 7 days. If you were not expecting this invitation, you can safely ignore this email.
-        </p>
-      </div>
-    `,
+    templateAlias: env.RESEND_INVITATION_TEMPLATE_ALIAS,
+    variables: {
+      INVITER_NAME: inviterName,
+      BUSINESS_NAME: businessName,
+      ROLE: role,
+      INVITE_URL: inviteUrl,
+    },
   });
 }

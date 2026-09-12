@@ -223,11 +223,12 @@ export class InvitationService {
             currency: true,
           },
         },
+        // Name only: this endpoint is reachable by anyone holding the token,
+        // and the invite screen shows who invited them, not how to reach them.
         inviter: {
           select: {
             id: true,
             name: true,
-            email: true,
           },
         },
       },
@@ -268,7 +269,15 @@ export class InvitationService {
   async acceptInvitation(
     token: string,
     userId: string,
-    clientInfo?: { ipAddress?: string | null; userAgent?: string | null }
+    clientInfo?: { ipAddress?: string | null; userAgent?: string | null },
+    options?: {
+      /**
+       * Marks the address verified in the same transaction as the membership.
+       * Used when the account was just created from the invitation itself:
+       * following a link sent to that address proves ownership of it.
+       */
+      markEmailVerified?: boolean;
+    }
   ) {
     const { invitation } = await this.getInvitationByToken(token);
 
@@ -310,17 +319,29 @@ export class InvitationService {
         data: { status: "ACCEPTED" },
       });
 
-      await auditService.log({
-        businessId: invitation.businessId,
-        userId: user.id,
-        actionType: "INVITATION_ACCEPTED",
-        metadata: {
-          invitationId: invitation.id,
-          role: invitation.role,
+      if (options?.markEmailVerified && !user.emailVerified) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { emailVerified: true },
+        });
+      }
+
+      await auditService.log(
+        {
+          businessId: invitation.businessId,
+          userId: user.id,
+          actionType: options?.markEmailVerified
+            ? "INVITATION_ACCEPTED_NEW_USER"
+            : "INVITATION_ACCEPTED",
+          metadata: {
+            invitationId: invitation.id,
+            role: invitation.role,
+          },
+          ipAddress: clientInfo?.ipAddress,
+          userAgent: clientInfo?.userAgent,
         },
-        ipAddress: clientInfo?.ipAddress,
-        userAgent: clientInfo?.userAgent,
-      });
+        tx
+      );
 
       return { businessId: invitation.businessId, membership };
     });

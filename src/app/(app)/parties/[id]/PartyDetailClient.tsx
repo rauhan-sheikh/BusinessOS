@@ -13,6 +13,9 @@ export interface TransactionItem {
   notes: string | null;
   referenceNumber: string | null;
   reversedTransactionId: string | null;
+  /** Business date of the entry; may be back-dated. */
+  transactionDate: string;
+  /** When the row was written. Never moves. */
   createdAt: string;
   createdBy: { id: string; name: string };
 }
@@ -193,8 +196,8 @@ export default function PartyDetailClient({
         partyPhone: party.phone || "",
         currentBalance: `${netBalance >= 0 ? "+" : "-"}${formatCurrency(Math.abs(netBalance * 100), currency)} (${netBalance >= 0 ? "To Collect" : "To Pay"})`,
         transactionId: tx.id,
-        date: new Date(tx.createdAt).toISOString().split("T")[0],
-        time: new Date(tx.createdAt).toLocaleTimeString("en-IN", { hour12: false }),
+        date: new Date(tx.transactionDate).toISOString().split("T")[0],
+        recordedAt: new Date(tx.createdAt).toISOString(),
         type: tx.transactionType,
         flow: isDebit ? "DEBIT (To Collect)" : "CREDIT (To Pay / Received)",
         currency,
@@ -208,7 +211,7 @@ export default function PartyDetailClient({
       };
     });
 
-    exportToCSV(`BusinessOS_Statement_${party.name.replace(/[^a-zA-Z0-9]/g, "_")}`, rows, [
+    const exported = exportToCSV(`BusinessOS_Statement_${party.name.replace(/[^a-zA-Z0-9]/g, "_")}`, rows, [
       { key: "statementParty", label: "Party Name" },
       { key: "partyGstin", label: "GSTIN" },
       { key: "partyPan", label: "PAN" },
@@ -216,7 +219,7 @@ export default function PartyDetailClient({
       { key: "currentBalance", label: "Current Balance" },
       { key: "transactionId", label: "Transaction ID" },
       { key: "date", label: "Date (YYYY-MM-DD)" },
-      { key: "time", label: "Time" },
+      { key: "recordedAt", label: "Recorded At (UTC)" },
       { key: "type", label: "Transaction Type" },
       { key: "flow", label: "Accounting Flow" },
       { key: "currency", label: "Currency" },
@@ -226,6 +229,10 @@ export default function PartyDetailClient({
       { key: "reversalStatus", label: "Reversal Status" },
       { key: "recordedBy", label: "Recorded By" },
     ]);
+
+    if (!exported) {
+      alert("There are no statement entries to export.");
+    }
   };
 
   return (
@@ -407,7 +414,7 @@ export default function PartyDetailClient({
                   return (
                     <tr key={tx.id} className="hover:bg-slate-800/30 transition-colors">
                       <td className="py-3.5 px-3 text-slate-400 whitespace-nowrap">
-                        {new Date(tx.createdAt).toLocaleDateString("en-IN", {
+                        {new Date(tx.transactionDate).toLocaleDateString("en-IN", {
                           day: "numeric",
                           month: "short",
                           year: "numeric",

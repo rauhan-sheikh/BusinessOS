@@ -5,6 +5,8 @@ import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
 import { ZodError } from "zod";
 import { AppError } from "@/shared/errors/app-error";
 import { headers } from "next/headers";
+import { setActiveBusinessCookie } from "@/shared/api/cookies";
+import { getClientInfo } from "@/shared/api/request";
 
 export async function POST(request: Request) {
   try {
@@ -19,12 +21,7 @@ export async function POST(request: Request) {
     const business = await businessService.createBusiness(session.user.id, body);
 
     const response = NextResponse.json({ business }, { status: 201 });
-    response.cookies.set("active_business_id", business.id, {
-      path: "/",
-      httpOnly: true,
-      sameSite: "lax",
-      maxAge: 60 * 60 * 24 * 30, // 30 days
-    });
+    setActiveBusinessCookie(response, business.id);
 
     return response;
   } catch (err: unknown) {
@@ -51,8 +48,7 @@ export async function PATCH(request: Request) {
     const { business, actor } = await getActiveBusinessContext(reqHeaders);
 
     const body = await request.json();
-    const ipAddress = reqHeaders.get("x-forwarded-for") || null;
-    const userAgent = reqHeaders.get("user-agent") || null;
+    const { ipAddress, userAgent } = getClientInfo(reqHeaders);
 
     const updated = await businessService.updateBusiness(business.id, actor, body, {
       ipAddress,
