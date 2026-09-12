@@ -80,8 +80,61 @@ jobs:
       - name: Build
         run: npm run build
 
-  # Deployment note: `prisma migrate deploy` is deliberately NOT part of
-  # `npm run build`. Running it there applied migrations inside the build
-  # container, before any deploy gate, on preview builds too, and with no way
-  # back - Vercel's instant rollback reverts code only. Run `npm run db:deploy`
-  # as a release step after a build succeeds.
+  migrate:
+    name: Apply migrations to production
+    # Only after everything above is green, and only for main. Pull requests
+    # and preview builds never reach this job, which is the failure the old
+    # setup had: `prisma migrate deploy` inside `npm run build` ran in every
+    # build container, on previews as well as production, before any deploy
+    # gate, and with no way back - Vercel's instant rollback reverts code only.
+    needs: verify
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    # Requires a GitHub environment named "production". Add a required reviewer
+    # there to turn this into a manual approval gate before anything touches the
+    # database.
+    environment: production
+
+    # One migration run at a time, never cancelled part-way through.
+    concurrency:
+      group: migrate-production
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Show pending migrations
+        env:
+          MIGRATION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: npx prisma migrate status
+
+      - name: Apply migrations
+        env:
+          # Neon's DIRECT (non-pooled) connection string. Migrations need a real
+          # session, which a pooled connection cannot guarantee.
+          MIGRATION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
+        run: npm run db:deploy
+
+# Setup this workflow expects:
+#
+#   1. A repository secret PRODUCTION_DATABASE_URL, set to the Neon DIRECT
+#      (non-pooled) connection string.
+#   2. A GitHub environment named "production". Adding a required reviewer to it
+#      makes every migration run wait for a human.
+#
+# Ordering caveat: Vercel deploys on the same push this job runs on, so code and
+# schema change at roughly the same moment without a strict order between them.
+# Keep migrations expand-then-contract - add before you remove, and let one
+# deploy pass between the two - so old and new code can both run against the
+# intermediate schema. The harden_ledger migration on this branch is the
+# counter-example: it renames a column and an enum value in place, so it is not
+# backward compatible and wants a quiet moment to land.

@@ -394,20 +394,35 @@ npm test
 ## Deployment
 
 ```
-GitHub → CI (typecheck, lint, test, migrate, build) → Vercel → Neon
+push to main → CI (typecheck, lint, test, migrate-from-empty, drift check, build)
+             → migrate job (production, gated)
+             → Vercel → Neon
 ```
 
-**Migrations are not applied during the build.** `prisma migrate deploy` previously ran inside `npm run build`, which meant migrations were applied in the build container before any deploy gate, on preview builds as well as production, with no way back — Vercel's instant rollback reverts code only, leaving the new schema in place.
+**Migrations are not applied during the build.** `prisma migrate deploy` used to run inside `npm run build`, which meant they were applied in the build container before any deploy gate, on preview builds as well as production, and with no way back — Vercel's instant rollback reverts code only, leaving the new schema in place.
 
-Run migrations as a **separate release step** after a successful build:
+They now run as a separate `migrate` job in `.github/workflows/ci.yml`, which only executes on a push to `main`, only after the full verification job is green, and only one at a time.
+
+### One-time setup
+
+1. Add a repository secret **`PRODUCTION_DATABASE_URL`** (GitHub → Settings → Secrets and variables → Actions), set to Neon's **direct, non-pooled** connection string. Migrations need a real session, which a pooled connection cannot guarantee.
+2. Create a GitHub environment named **`production`** (GitHub → Settings → Environments). Adding a required reviewer there turns every migration run into a manual approval gate.
+
+Until the secret exists, the job will fail rather than silently skip — which is the intended behaviour.
+
+### Running migrations by hand
 
 ```bash
-npm run db:deploy
+MIGRATION_DATABASE_URL="<neon direct url>" npm run db:deploy
 ```
 
-⚠️ **This needs a one-time change to the Vercel project.** Until a deploy hook or release job calls `db:deploy`, migrations will not apply automatically.
+`prisma.config.ts` prefers `MIGRATION_DATABASE_URL` over `DATABASE_URL`, so this works without touching the application's own connection string.
 
-Prefer expand-then-contract migrations, so the previous and current code can both run against the intermediate schema.
+### Migration safety
+
+Vercel deploys on the same push the migrate job runs on, so code and schema change at roughly the same moment with no strict ordering between them. Prefer **expand-then-contract**: add before you remove, and let a deploy pass between the two, so old and new code can both run against the intermediate schema.
+
+Renames are the exception and need care — `ALTER ... RENAME` is data-preserving but not backward-compatible, so the previous code breaks the moment it lands. Plan those for a quiet moment.
 
 ---
 
