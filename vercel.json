@@ -1,0 +1,9 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "git": {
+    "//": "Production deploys are driven by .github/workflows/ci.yml, so that migrations land before the code that depends on them. Auto-deploy is disabled for main only - pull requests still get preview deployments as usual.",
+    "deploymentEnabled": {
+      "main": false
+    }
+  }
+}

@@ -124,16 +124,62 @@ jobs:
           MIGRATION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
         run: npm run db:deploy
 
+  deploy:
+    name: Deploy to Vercel
+    # The ordering this whole workflow exists for: verify, then migrate, then
+    # ship. A failed migration stops the deploy, so code that needs a schema
+    # change is never live before that change lands.
+    #
+    # Vercel's own git auto-deploy is disabled for main in vercel.json, because
+    # it does not wait for anything. Pull requests still get preview deploys.
+    needs: [verify, migrate]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      - name: Pull Vercel environment
+        # Fetches the project's production environment variables, which the
+        # build needs - src/lib/env.ts validates them at import time.
+        run: vercel pull --yes --environment=production --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Build
+        run: vercel build --prod --token=${{ secrets.VERCEL_TOKEN }}
+
+      - name: Deploy
+        # --prebuilt uploads the output built in the step above rather than
+        # rebuilding on Vercel.
+        run: vercel deploy --prebuilt --prod --token=${{ secrets.VERCEL_TOKEN }}
+
 # Setup this workflow expects:
 #
-#   A repository secret PRODUCTION_DATABASE_URL, set to the Neon DIRECT
-#   (non-pooled) connection string. Nothing else - no GitHub environment, so
-#   this does not collide with the one Vercel's integration manages.
+#   PRODUCTION_DATABASE_URL - Neon's DIRECT (non-pooled) connection string.
+#   VERCEL_TOKEN            - Vercel account token.
+#   VERCEL_ORG_ID           - from `vercel link`, in .vercel/project.json.
+#   VERCEL_PROJECT_ID       - likewise.
 #
-# Ordering caveat: Vercel deploys on the same push this job runs on, so code and
-# schema change at roughly the same moment without a strict order between them.
-# Keep migrations expand-then-contract - add before you remove, and let one
-# deploy pass between the two - so old and new code can both run against the
-# intermediate schema. The harden_ledger migration on this branch is the
-# counter-example: it renames a column and an enum value in place, so it is not
-# backward compatible and wants a quiet moment to land.
+# All four are repository secrets. No GitHub environment is used, so nothing
+# here collides with the "Production" environment Vercel's integration manages.
+#
+# Ordering: verify -> migrate -> deploy, each gated on the last. Migrations
+# should still be expand-then-contract where possible, since a deploy is never
+# instantaneous; but a rename like harden_ledger, which is not backward
+# compatible in either direction, is now at least guaranteed to land before the
+# code that expects it.

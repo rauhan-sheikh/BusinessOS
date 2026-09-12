@@ -393,23 +393,35 @@ npm test
 
 ## Deployment
 
+Production deploys run **in order, each gated on the last**:
+
 ```
-push to main → CI (typecheck, lint, test, migrate-from-empty, drift check, build)
-             → migrate job (production, gated)
-             → Vercel → Neon
+push to main
+  └─ verify   typecheck, lint, 117 tests, migrate-from-empty, drift check, build
+      └─ migrate   apply pending migrations to Neon
+          └─ deploy   build and ship to Vercel
 ```
 
-**Migrations are not applied during the build.** `prisma migrate deploy` used to run inside `npm run build`, which meant they were applied in the build container before any deploy gate, on preview builds as well as production, and with no way back — Vercel's instant rollback reverts code only, leaving the new schema in place.
+A failed migration stops the deploy, so code is never live against a schema that has not been migrated.
 
-They now run as a separate `migrate` job in `.github/workflows/ci.yml`, which only executes on a push to `main`, only after the full verification job is green, and only one at a time.
+**Two things had to change to get that ordering.**
+
+`prisma migrate deploy` came out of `npm run build`. Inside the build it ran in every build container — previews included — before any deploy gate, and with no way back, since Vercel's instant rollback reverts code only and leaves the new schema in place.
+
+Vercel's git auto-deploy is disabled for `main` in `vercel.json`, because it does not wait for anything: it would otherwise ship on the same push the migration was still running on. Pull requests still get preview deployments as normal.
 
 ### One-time setup
 
-Add a repository secret **`PRODUCTION_DATABASE_URL`** (GitHub → Settings → Secrets and variables → Actions), set to Neon's **direct, non-pooled** connection string — migrations need a real session, which a pooled connection cannot guarantee. Neon's pooled hostnames contain `-pooler`; the direct one does not.
+Four repository secrets (GitHub → Settings → Secrets and variables → Actions):
 
-That is the only setup required. The job is deliberately not bound to a GitHub environment, since Vercel's integration manages one named `Production` and sharing the name would entangle the two.
+| Secret | Value |
+|---|---|
+| `PRODUCTION_DATABASE_URL` | Neon's **direct, non-pooled** connection string. Migrations need a real session, which a pooled connection cannot guarantee — pooled hostnames contain `-pooler`, the direct one does not. |
+| `VERCEL_TOKEN` | Vercel → Account Settings → Tokens |
+| `VERCEL_ORG_ID` | Run `npx vercel link`, then read `.vercel/project.json` |
+| `VERCEL_PROJECT_ID` | Same file |
 
-Until the secret exists, the job fails rather than silently skipping — which is the intended behaviour.
+No GitHub environment is used, deliberately: Vercel's integration manages one named `Production`, and sharing the name would entangle deployment state with migration state.
 
 ### Running migrations by hand
 
@@ -421,9 +433,9 @@ MIGRATION_DATABASE_URL="<neon direct url>" npm run db:deploy
 
 ### Migration safety
 
-Vercel deploys on the same push the migrate job runs on, so code and schema change at roughly the same moment with no strict ordering between them. Prefer **expand-then-contract**: add before you remove, and let a deploy pass between the two, so old and new code can both run against the intermediate schema.
+Ordering is guaranteed, but a deploy is not instantaneous, so prefer **expand-then-contract**: add before you remove, and let a deploy pass between the two, so old and new code can both run against the intermediate schema.
 
-Renames are the exception and need care — `ALTER ... RENAME` is data-preserving but not backward-compatible, so the previous code breaks the moment it lands. Plan those for a quiet moment.
+Renames are the exception — `ALTER ... RENAME` preserves data but is not backward-compatible in either direction, so the previous code breaks the moment it lands. The gating means it lands *before* the new code rather than after, which is the safer half of a short window, but plan those for a quiet moment regardless.
 
 ---
 
