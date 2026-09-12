@@ -405,10 +405,11 @@ They now run as a separate `migrate` job in `.github/workflows/ci.yml`, which on
 
 ### One-time setup
 
-1. Add a repository secret **`PRODUCTION_DATABASE_URL`** (GitHub → Settings → Secrets and variables → Actions), set to Neon's **direct, non-pooled** connection string. Migrations need a real session, which a pooled connection cannot guarantee.
-2. Create a GitHub environment named **`production`** (GitHub → Settings → Environments). Adding a required reviewer there turns every migration run into a manual approval gate.
+Add a repository secret **`PRODUCTION_DATABASE_URL`** (GitHub → Settings → Secrets and variables → Actions), set to Neon's **direct, non-pooled** connection string — migrations need a real session, which a pooled connection cannot guarantee. Neon's pooled hostnames contain `-pooler`; the direct one does not.
 
-Until the secret exists, the job will fail rather than silently skip — which is the intended behaviour.
+That is the only setup required. The job is deliberately not bound to a GitHub environment, since Vercel's integration manages one named `Production` and sharing the name would entangle the two.
+
+Until the secret exists, the job fails rather than silently skipping — which is the intended behaviour.
 
 ### Running migrations by hand
 

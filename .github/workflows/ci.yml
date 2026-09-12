@@ -91,10 +91,10 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
 
-    # Requires a GitHub environment named "production". Add a required reviewer
-    # there to turn this into a manual approval gate before anything touches the
-    # database.
-    environment: production
+    # Deliberately NOT bound to a GitHub environment. Vercel's GitHub
+    # integration manages its own "Production" environment, and binding this job
+    # to one of the same name would entangle the two. PRODUCTION_DATABASE_URL is
+    # a repository secret, which is available here without an environment.
 
     # One migration run at a time, never cancelled part-way through.
     concurrency:
@@ -126,10 +126,9 @@ jobs:
 
 # Setup this workflow expects:
 #
-#   1. A repository secret PRODUCTION_DATABASE_URL, set to the Neon DIRECT
-#      (non-pooled) connection string.
-#   2. A GitHub environment named "production". Adding a required reviewer to it
-#      makes every migration run wait for a human.
+#   A repository secret PRODUCTION_DATABASE_URL, set to the Neon DIRECT
+#   (non-pooled) connection string. Nothing else - no GitHub environment, so
+#   this does not collide with the one Vercel's integration manages.
 #
 # Ordering caveat: Vercel deploys on the same push this job runs on, so code and
 # schema change at roughly the same moment without a strict order between them.
