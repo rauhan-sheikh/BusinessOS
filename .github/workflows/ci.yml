@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Lets you deploy from the Actions tab without a code change - useful after
+  # fixing a secret, or to re-ship the current main.
+  workflow_dispatch:
 
 # A newer push to the same branch supersedes an in-flight run.
 concurrency:
@@ -88,7 +91,7 @@ jobs:
     # build container, on previews as well as production, before any deploy
     # gate, and with no way back - Vercel's instant rollback reverts code only.
     needs: verify
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
 
     # Deliberately NOT bound to a GitHub environment. Vercel's GitHub
@@ -133,7 +136,7 @@ jobs:
     # Vercel's own git auto-deploy is disabled for main in vercel.json, because
     # it does not wait for anything. Pull requests still get preview deploys.
     needs: [verify, migrate]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
 
     concurrency:
