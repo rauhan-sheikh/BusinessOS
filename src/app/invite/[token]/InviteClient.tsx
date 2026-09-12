@@ -19,7 +19,6 @@ interface InviteClientProps {
     };
     inviter: {
       name: string;
-      email: string;
     };
   };
   currentUser: {

@@ -3,8 +3,20 @@ import { prisma } from "@/db";
 import { AppError } from "@/shared/errors/app-error";
 import { auditService } from "@/modules/audit/services/audit.service";
 import { emailListService } from "@/modules/emailList/services/emailList.service";
-import { sendInvitationEmail } from "@/lib/email";
+import { sendTemplateEmail } from "@/lib/email";
 import type { BusinessRole } from "@/generated/prisma/client";
+import {
+  PERMISSION,
+  requirePermission,
+  assertCanAssignRole,
+  type Actor,
+} from "@/modules/auth/permissions";
+
+/** Absolute URL a recipient follows to accept an invitation. */
+function buildInviteUrl(token: string): string {
+  const baseUrl = process.env.BETTER_AUTH_URL || "http://localhost:3000";
+  return `${baseUrl}/invite/${token}`;
+}
 
 export class InvitationService {
   /**
@@ -13,11 +25,16 @@ export class InvitationService {
    */
   async inviteMember(
     businessId: string,
-    inviterId: string,
+    actor: Actor,
     email: string,
     role: BusinessRole,
     clientInfo?: { ipAddress?: string | null; userAgent?: string | null }
   ) {
+    requirePermission(actor, PERMISSION.MEMBER_INVITE);
+    // Gates the role being granted too, so an ADMIN cannot invite an OWNER.
+    assertCanAssignRole(actor, role);
+
+    const inviterId = actor.userId;
     const normalizedEmail = email.toLowerCase().trim();
 
     // 1. Auto-sync to EmailList
@@ -82,17 +99,21 @@ export class InvitationService {
     });
 
     // 6. Build invitation URL
-    const baseUrl = process.env.BETTER_AUTH_URL || "http://localhost:3000";
-    const inviteUrl = `${baseUrl}/invite/${token}`;
+    const inviteUrl = buildInviteUrl(token);
 
     // 7. Dispatch invitation email
     try {
-      await sendInvitationEmail({
+      await sendTemplateEmail({
         to: normalizedEmail,
-        inviterName: inviter.name,
-        businessName: business.name,
-        role,
-        inviteUrl,
+        template: "TEAM_INVITATION",
+        // Applies this workspace's customised wording when it has one.
+        businessId,
+        variables: {
+          INVITER_NAME: inviter.name,
+          BUSINESS_NAME: business.name,
+          ROLE: role,
+          INVITE_URL: inviteUrl,
+        },
       });
     } catch (err) {
       console.error("Failed to send invitation email via Resend:", err);
@@ -120,16 +141,39 @@ export class InvitationService {
   }
 
   /**
-   * List pending and recent invitations for a business.
+   * Pending and recent invitations for a business.
+   *
+   * The raw token is never returned. It is a bearer credential: anyone holding
+   * it can claim the invited role through the unauthenticated register
+   * endpoint, so this previously let a lower-privileged member read a pending
+   * ADMIN invite and claim it. Callers get a ready-built invite URL instead,
+   * and only if they are allowed to invite in the first place.
    */
-  async listInvitations(businessId: string) {
-    return prisma.invitation.findMany({
+  async listInvitations(businessId: string, actor: Actor) {
+    requirePermission(actor, PERMISSION.INVITATION_VIEW);
+
+    const invitations = await prisma.invitation.findMany({
       where: { businessId },
-      include: {
+      select: {
+        id: true,
+        email: true,
+        role: true,
+        status: true,
+        expiresAt: true,
+        createdAt: true,
+        token: true,
         inviter: { select: { id: true, name: true, email: true } },
       },
       orderBy: { createdAt: "desc" },
     });
+
+    const canShare = actor.role === "OWNER" || actor.role === "ADMIN";
+
+    return invitations.map(({ token, ...invitation }) => ({
+      ...invitation,
+      // Only a still-actionable invitation needs a shareable link.
+      inviteUrl: canShare && invitation.status === "PENDING" ? buildInviteUrl(token) : null,
+    }));
   }
 
   /**
@@ -138,9 +182,12 @@ export class InvitationService {
   async revokeInvitation(
     businessId: string,
     invitationId: string,
-    userId: string,
+    actor: Actor,
     clientInfo?: { ipAddress?: string | null; userAgent?: string | null }
   ) {
+    requirePermission(actor, PERMISSION.MEMBER_INVITE);
+
+    const userId = actor.userId;
     const invitation = await prisma.invitation.findUnique({
       where: { id: invitationId },
     });
@@ -181,11 +228,12 @@ export class InvitationService {
             currency: true,
           },
         },
+        // Name only: this endpoint is reachable by anyone holding the token,
+        // and the invite screen shows who invited them, not how to reach them.
         inviter: {
           select: {
             id: true,
             name: true,
-            email: true,
           },
         },
       },
@@ -226,7 +274,15 @@ export class InvitationService {
   async acceptInvitation(
     token: string,
     userId: string,
-    clientInfo?: { ipAddress?: string | null; userAgent?: string | null }
+    clientInfo?: { ipAddress?: string | null; userAgent?: string | null },
+    options?: {
+      /**
+       * Marks the address verified in the same transaction as the membership.
+       * Used when the account was just created from the invitation itself:
+       * following a link sent to that address proves ownership of it.
+       */
+      markEmailVerified?: boolean;
+    }
   ) {
     const { invitation } = await this.getInvitationByToken(token);
 
@@ -268,99 +324,31 @@ export class InvitationService {
         data: { status: "ACCEPTED" },
       });
 
-      await auditService.log({
-        businessId: invitation.businessId,
-        userId: user.id,
-        actionType: "INVITATION_ACCEPTED",
-        metadata: {
-          invitationId: invitation.id,
-          role: invitation.role,
-        },
-        ipAddress: clientInfo?.ipAddress,
-        userAgent: clientInfo?.userAgent,
-      });
-
-      return { businessId: invitation.businessId, membership };
-    });
-  }
-
-  /**
-   * Accept invitation for a new user: creates their account, marks email verified,
-   * establishes business membership, and returns the new user.
-   */
-  async registerAndAcceptInvitation(
-    token: string,
-    params: { name: string; passwordHash: string },
-    clientInfo?: { ipAddress?: string | null; userAgent?: string | null }
-  ) {
-    const { invitation } = await this.getInvitationByToken(token);
-
-    // Ensure email is in emailList
-    await emailListService.ensureEmail(invitation.email);
-
-    return prisma.$transaction(async (tx) => {
-      // Check if user exists
-      let user = await tx.user.findUnique({
-        where: { email: invitation.email },
-      });
-
-      if (!user) {
-        // Create user
-        const newUserId = crypto.randomUUID();
-        user = await tx.user.create({
-          data: {
-            id: newUserId,
-            name: params.name,
-            email: invitation.email,
-            emailVerified: true, // Acceptance of invitation verifies the email address!
-            isActive: true,
-          },
-        });
-
-        // Create password account for Better Auth
-        await tx.account.create({
-          data: {
-            id: crypto.randomUUID(),
-            accountId: newUserId,
-            providerId: "credential",
-            userId: newUserId,
-            password: params.passwordHash,
-          },
+      if (options?.markEmailVerified && !user.emailVerified) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { emailVerified: true },
         });
       }
 
-      // Add to BusinessUser
-      const membership = await tx.businessUser.create({
-        data: {
+      await auditService.log(
+        {
           businessId: invitation.businessId,
           userId: user.id,
-          role: invitation.role,
+          actionType: options?.markEmailVerified
+            ? "INVITATION_ACCEPTED_NEW_USER"
+            : "INVITATION_ACCEPTED",
+          metadata: {
+            invitationId: invitation.id,
+            role: invitation.role,
+          },
+          ipAddress: clientInfo?.ipAddress,
+          userAgent: clientInfo?.userAgent,
         },
-      });
+        tx
+      );
 
-      // Update invitation status
-      await tx.invitation.update({
-        where: { id: invitation.id },
-        data: { status: "ACCEPTED" },
-      });
-
-      await auditService.log({
-        businessId: invitation.businessId,
-        userId: user.id,
-        actionType: "INVITATION_ACCEPTED_NEW_USER",
-        metadata: {
-          invitationId: invitation.id,
-          role: invitation.role,
-        },
-        ipAddress: clientInfo?.ipAddress,
-        userAgent: clientInfo?.userAgent,
-      });
-
-      return {
-        user,
-        businessId: invitation.businessId,
-        membership,
-      };
+      return { businessId: invitation.businessId, membership };
     });
   }
 }

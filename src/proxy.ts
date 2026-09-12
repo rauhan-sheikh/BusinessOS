@@ -1,36 +1,58 @@
-import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
+import { NextResponse, type NextRequest } from "next/server";
+import { getSessionCookie } from "better-auth/cookies";
 
-// Routes that require authentication
-const PROTECTED_PREFIXES = ["/dashboard", "/onboarding", "/parties", "/transactions", "/settings"];
+/**
+ * Optimistic routing guard.
+ *
+ * This reads the session cookie only - it does not query the database. Next's
+ * own guidance is explicit that Proxy "should not be used as a full session
+ * management or authorization solution", and that because it runs on every
+ * route including prefetches, you should "only read the session from the cookie
+ * (optimistic checks), and avoid database checks to prevent performance
+ * issues". The previous implementation called auth.api.getSession here, so
+ * every navigation and every prefetch cost a session lookup.
+ *
+ * Real authorization is unaffected: (app)/layout.tsx resolves and validates the
+ * session server-side, and every API route and service checks membership and
+ * permissions itself. A forged cookie gets past this redirect and no further.
+ */
+const PROTECTED_PREFIXES = [
+  "/dashboard",
+  "/onboarding",
+  "/parties",
+  "/transactions",
+  "/settings",
+];
 
-// Routes that should redirect authenticated users away (e.g., login while logged in)
-const AUTH_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password", "/verify-email"];
+/** Signed-in users are sent to the app instead of these. */
+const AUTH_ROUTES = ["/login", "/register", "/forgot-password", "/reset-password"];
 
-export async function proxy(request: NextRequest) {
+function isUnder(pathname: string, prefixes: string[]): boolean {
+  return prefixes.some(
+    (prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`)
+  );
+}
+
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Check if this is a protected route or auth/root route
-  const isProtected = PROTECTED_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-  const isAuthRoute = AUTH_ROUTES.some((route) => pathname.startsWith(route)) || pathname === "/";
+  const isProtected = isUnder(pathname, PROTECTED_PREFIXES);
+  const isAuthRoute = isUnder(pathname, AUTH_ROUTES);
 
-  // Fast path: if not a relevant route (e.g. /privacy, /terms, /security, /cookies), pass through
   if (!isProtected && !isAuthRoute) {
     return NextResponse.next();
   }
 
-  // Fetch session using Better Auth's server-side API
-  const session = await auth.api.getSession({ headers: request.headers });
+  // Presence only. Validity is established server-side, where it matters.
+  const hasSessionCookie = Boolean(getSessionCookie(request));
 
-  // Unauthenticated user tries to access a protected route → redirect to login
-  if (!session && isProtected) {
+  if (!hasSessionCookie && isProtected) {
     const loginUrl = new URL("/login", request.url);
     loginUrl.searchParams.set("callbackUrl", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  // Authenticated user tries to access root or auth routes (e.g. /, /login, /register) → redirect to dashboard
-  if (session && isAuthRoute) {
+  if (hasSessionCookie && isAuthRoute) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
@@ -40,12 +62,9 @@ export async function proxy(request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Match all request paths EXCEPT:
-     * - _next/static (static files)
-     * - _next/image (image optimization)
-     * - favicon.ico
-     * - api routes (handled by their own auth checks)
-     * - public assets
+     * Everything except static assets, image optimisation, the favicon, and
+     * /api - API routes authenticate themselves, so running this in front of
+     * them would add a redirect where a 401 belongs.
      */
     "/((?!_next/static|_next/image|favicon.ico|api/).*)",
   ],

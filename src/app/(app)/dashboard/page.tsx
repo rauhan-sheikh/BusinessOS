@@ -1,4 +1,3 @@
-import { headers } from "next/headers";
 import Link from "next/link";
 import { formatCurrency } from "@/shared/utils/currency";
 import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
@@ -6,13 +5,12 @@ import { partyService } from "@/modules/parties/services/party.service";
 import { transactionService } from "@/modules/transactions/services/transaction.service";
 
 export default async function DashboardPage() {
-  const reqHeaders = await headers();
-  const { business: activeBusiness, user } = await getActiveBusinessContext(reqHeaders);
+  const { business: activeBusiness, user, actor } = await getActiveBusinessContext();
 
   // Query real data from domain services
   const [aggregates, { transactions: recentTransactions }] = await Promise.all([
-    partyService.getBusinessPartyAggregates(activeBusiness.id),
-    transactionService.listTransactions(activeBusiness.id, { limit: 5 }),
+    partyService.getBusinessPartyAggregates(activeBusiness.id, actor),
+    transactionService.listTransactions(activeBusiness.id, actor, { limit: 5 }),
   ]);
 
   const currency = activeBusiness.currency || "INR";
@@ -153,7 +151,7 @@ export default async function DashboardPage() {
               const isCredit =
                 tx.transactionType === "SALE" ||
                 tx.transactionType === "PAYMENT_MADE" ||
-                (tx.transactionType === "OPENING_BALANCE" && tx.OpeningBalanceType === "RECEIVABLE");
+                (tx.transactionType === "OPENING_BALANCE" && tx.direction === "RECEIVABLE");
 
               return (
                 <div key={tx.id} className="py-3.5 flex items-center justify-between gap-4">
@@ -164,7 +162,7 @@ export default async function DashboardPage() {
                           ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
                           : tx.transactionType === "PURCHASE"
                           ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
-                          : tx.transactionType === "PAYMENT_RECEIEVED"
+                          : tx.transactionType === "PAYMENT_RECEIVED"
                           ? "bg-sky-500/10 text-sky-400 border border-sky-500/20"
                           : tx.transactionType === "PAYMENT_MADE"
                           ? "bg-purple-500/10 text-purple-400 border border-purple-500/20"
@@ -173,7 +171,7 @@ export default async function DashboardPage() {
                           : "bg-slate-800 text-slate-300 border border-slate-700"
                       }`}
                     >
-                      {tx.transactionType === "PAYMENT_RECEIEVED"
+                      {tx.transactionType === "PAYMENT_RECEIVED"
                         ? "PAYMENT IN"
                         : tx.transactionType === "PAYMENT_MADE"
                         ? "PAYMENT OUT"
@@ -187,7 +185,7 @@ export default async function DashboardPage() {
                         {tx.party.name}
                       </Link>
                       <p className="text-xs text-slate-500">
-                        {new Date(tx.createdAt).toLocaleDateString("en-IN", {
+                        {new Date(tx.transactionDate).toLocaleDateString("en-IN", {
                           day: "numeric",
                           month: "short",
                           year: "numeric",

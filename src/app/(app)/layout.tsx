@@ -1,33 +1,33 @@
 import { redirect } from "next/navigation";
-import { auth } from "@/lib/auth";
-import { businessService } from "@/modules/businesses/services/business.service";
 import { getActiveBusinessContext } from "@/modules/auth/utils/session-helper";
-import { headers } from "next/headers";
+import { businessService } from "@/modules/businesses/services/business.service";
+import { AppError } from "@/shared/errors/app-error";
 import AppTopBar from "./components/AppTopBar";
 import AppFooter from "./components/AppFooter";
 
-export default async function AppLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  const reqHeaders = await headers();
-  const session = await auth.api.getSession({ headers: reqHeaders });
-
-  if (!session) {
-    redirect("/login");
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  // One resolution for the whole render: the helper is request-memoised, so the
+  // pages below reuse this rather than repeating the session lookup and
+  // membership join. The layout previously did both itself and then called the
+  // helper anyway, which meant doing the work twice before rendering anything.
+  let context;
+  try {
+    context = await getActiveBusinessContext();
+  } catch (err) {
+    if (err instanceof AppError && err.statusCode === 401) {
+      redirect("/login");
+    }
+    // 403 here means the account is authenticated but has no workspace yet.
+    if (err instanceof AppError && err.statusCode === 403) {
+      redirect("/onboarding");
+    }
+    throw err;
   }
 
-  // Check business memberships to determine if onboarding is needed
-  const memberships = await businessService.getBusinessesForUser(session.user.id);
+  const { user, business: activeBusiness, role: activeRole } = context;
 
-  if (memberships.length === 0) {
-    redirect("/onboarding");
-  }
-
-  const { business: activeBusiness, role: activeRole } =
-    await getActiveBusinessContext(reqHeaders);
-
+  // Only the workspace switcher needs the full membership list.
+  const memberships = await businessService.getBusinessesForUser(user.id);
   const serializedMemberships = memberships.map((m) => ({
     id: m.business.id,
     name: m.business.name,
@@ -37,7 +37,7 @@ export default async function AppLayout({
   return (
     <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 antialiased">
       <AppTopBar
-        user={session.user}
+        user={user}
         businessName={activeBusiness.name}
         activeBusinessId={activeBusiness.id}
         activeRole={activeRole}

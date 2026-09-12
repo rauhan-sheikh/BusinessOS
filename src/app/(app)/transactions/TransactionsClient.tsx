@@ -9,10 +9,13 @@ export interface LedgerTransaction {
   id: string;
   transactionType: string;
   amountMinor: string | number | bigint;
-  OpeningBalanceType: string | null;
+  direction: string | null;
   notes: string | null;
   referenceNumber: string | null;
   reversedTransactionId: string | null;
+  /** Business date of the entry; may be back-dated. */
+  transactionDate: string;
+  /** When the row was written. Never moves. */
   createdAt: string;
   party: {
     id: string;
@@ -66,11 +69,11 @@ export default function TransactionsClient({
 
   const [form, setForm] = useState({
     partyId: parties[0]?.id || "",
-    transactionType: "SALE" as "SALE" | "PURCHASE" | "PAYMENT_RECEIEVED" | "PAYMENT_MADE" | "ADJUSTMENT",
+    transactionType: "SALE" as "SALE" | "PURCHASE" | "PAYMENT_RECEIVED" | "PAYMENT_MADE" | "ADJUSTMENT",
     amount: "",
     referenceNumber: "",
     notes: "",
-    adjustmentType: "RECEIVABLE" as "RECEIVABLE" | "PAYABLE",
+    direction: "RECEIVABLE" as "RECEIVABLE" | "PAYABLE",
   });
 
   // Fetch transactions with applied filters & pagination
@@ -170,8 +173,8 @@ export default function TransactionsClient({
           amount: parseFloat(form.amount),
           referenceNumber: form.referenceNumber || undefined,
           notes: form.notes || undefined,
-          adjustmentType:
-            form.transactionType === "ADJUSTMENT" ? form.adjustmentType : undefined,
+          direction:
+            form.transactionType === "ADJUSTMENT" ? form.direction : undefined,
         }),
       });
 
@@ -192,7 +195,7 @@ export default function TransactionsClient({
         amount: "",
         referenceNumber: "",
         notes: "",
-        adjustmentType: "RECEIVABLE",
+        direction: "RECEIVABLE",
       });
 
       // Refresh list
@@ -230,31 +233,45 @@ export default function TransactionsClient({
   const handleExportCSV = async () => {
     setIsExporting(true);
     try {
-      // Fetch all records matching the current active filter (limit = 5000)
-      const params = new URLSearchParams();
-      params.set("page", "1");
-      params.set("limit", "5000");
-      if (search) params.set("search", search);
-      if (typeFilter !== "ALL") params.set("type", typeFilter);
-      if (partyFilter !== "ALL") params.set("partyId", partyFilter);
-      if (startDate) params.set("startDate", startDate);
-      if (endDate) params.set("endDate", endDate);
+      // Page through every record matching the current filter. A single
+      // request asking for 5000 was silently capped at the server's limit of
+      // 1000, so any larger export quietly lost rows.
+      const PAGE_SIZE = 1000;
+      const records: LedgerTransaction[] = [];
 
-      const res = await fetch(`/api/transactions?${params.toString()}`);
-      const data = await res.json();
+      for (let page = 1; ; page++) {
+        const params = new URLSearchParams();
+        params.set("page", String(page));
+        params.set("limit", String(PAGE_SIZE));
+        if (search) params.set("search", search);
+        if (typeFilter !== "ALL") params.set("type", typeFilter);
+        if (partyFilter !== "ALL") params.set("partyId", partyFilter);
+        if (startDate) params.set("startDate", startDate);
+        if (endDate) params.set("endDate", endDate);
 
-      const records: LedgerTransaction[] = data.transactions || transactions;
+        const res = await fetch(`/api/transactions?${params.toString()}`);
+        if (!res.ok) {
+          // Exporting a partial ledger without saying so is worse than failing.
+          throw new Error("Could not fetch the full ledger for export. Please try again.");
+        }
+
+        const data = await res.json();
+        const batch: LedgerTransaction[] = data.transactions ?? [];
+        records.push(...batch);
+
+        if (batch.length < PAGE_SIZE || records.length >= (data.totalCount ?? 0)) break;
+      }
 
       const rows = records.map((tx) => {
         const isDebit =
           tx.transactionType === "SALE" ||
           tx.transactionType === "PAYMENT_MADE" ||
-          (tx.transactionType === "OPENING_BALANCE" && tx.OpeningBalanceType === "RECEIVABLE");
+          (tx.transactionType === "OPENING_BALANCE" && tx.direction === "RECEIVABLE");
 
         return {
           transactionId: tx.id,
-          date: new Date(tx.createdAt).toISOString().split("T")[0],
-          time: new Date(tx.createdAt).toLocaleTimeString("en-IN", { hour12: false }),
+          date: new Date(tx.transactionDate).toISOString().split("T")[0],
+          recordedAt: new Date(tx.createdAt).toISOString(),
           counterparty: tx.party?.name || "N/A",
           phone: tx.party?.phone || "",
           gstin: tx.party?.gstin || "",
@@ -273,10 +290,10 @@ export default function TransactionsClient({
         };
       });
 
-      exportToCSV("BusinessOS_Enterprise_Ledger", rows, [
+      const exported = exportToCSV("BusinessOS_Enterprise_Ledger", rows, [
         { key: "transactionId", label: "Transaction ID" },
         { key: "date", label: "Date (YYYY-MM-DD)" },
-        { key: "time", label: "Time" },
+        { key: "recordedAt", label: "Recorded At (UTC)" },
         { key: "counterparty", label: "Counterparty Name" },
         { key: "phone", label: "Phone" },
         { key: "gstin", label: "GSTIN" },
@@ -291,6 +308,10 @@ export default function TransactionsClient({
         { key: "recordedBy", label: "Recorded By" },
         { key: "recordedByEmail", label: "User Email" },
       ]);
+
+      if (!exported) {
+        alert("No transactions match the current filters to export.");
+      }
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : "Failed to export CSV");
     } finally {
@@ -360,7 +381,7 @@ export default function TransactionsClient({
               <option value="ALL">All Types</option>
               <option value="SALE">📦 Sale</option>
               <option value="PURCHASE">🛒 Purchase</option>
-              <option value="PAYMENT_RECEIEVED">💰 Payment Received</option>
+              <option value="PAYMENT_RECEIVED">💰 Payment Received</option>
               <option value="PAYMENT_MADE">💳 Payment Made</option>
               <option value="OPENING_BALANCE">🏦 Opening Balance</option>
               <option value="ADJUSTMENT">⚙️ Adjustment</option>
@@ -467,7 +488,7 @@ export default function TransactionsClient({
                   const isDebit =
                     tx.transactionType === "SALE" ||
                     tx.transactionType === "PAYMENT_MADE" ||
-                    (tx.transactionType === "OPENING_BALANCE" && tx.OpeningBalanceType === "RECEIVABLE");
+                    (tx.transactionType === "OPENING_BALANCE" && tx.direction === "RECEIVABLE");
 
                   const isReversal = tx.transactionType === "REVERSAL";
 
@@ -481,7 +502,7 @@ export default function TransactionsClient({
                       {/* Date */}
                       <td className="py-3.5 px-4 whitespace-nowrap text-slate-400">
                         <p className="font-medium text-slate-200">
-                          {new Date(tx.createdAt).toLocaleDateString("en-IN", {
+                          {new Date(tx.transactionDate).toLocaleDateString("en-IN", {
                             day: "numeric",
                             month: "short",
                             year: "numeric",
@@ -516,7 +537,7 @@ export default function TransactionsClient({
                               ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                               : tx.transactionType === "PURCHASE"
                               ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                              : tx.transactionType === "PAYMENT_RECEIEVED"
+                              : tx.transactionType === "PAYMENT_RECEIVED"
                               ? "bg-sky-500/10 text-sky-400 border-sky-500/20"
                               : tx.transactionType === "PAYMENT_MADE"
                               ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20"
@@ -525,7 +546,7 @@ export default function TransactionsClient({
                               : "bg-slate-800 text-slate-400 border-slate-700"
                           }`}
                         >
-                          {tx.transactionType === "PAYMENT_RECEIEVED"
+                          {tx.transactionType === "PAYMENT_RECEIVED"
                             ? "PAYMENT IN"
                             : tx.transactionType}
                         </span>
@@ -653,7 +674,7 @@ export default function TransactionsClient({
                   className={inputCls}
                 >
                   <option value="SALE">📦 Sale (Invoice / To Collect)</option>
-                  <option value="PAYMENT_RECEIEVED">💰 Payment Received (Reduces Receivable)</option>
+                  <option value="PAYMENT_RECEIVED">💰 Payment Received (Reduces Receivable)</option>
                   <option value="PURCHASE">🛒 Purchase (Bill / To Pay)</option>
                   <option value="PAYMENT_MADE">💳 Payment Made (Reduces Payable)</option>
                   <option value="ADJUSTMENT">⚙️ Manual Adjustment</option>
@@ -666,11 +687,11 @@ export default function TransactionsClient({
                     Adjustment Direction *
                   </label>
                   <select
-                    value={form.adjustmentType}
+                    value={form.direction}
                     onChange={(e) =>
                       setForm({
                         ...form,
-                        adjustmentType: e.target.value as typeof form.adjustmentType,
+                        direction: e.target.value as typeof form.direction,
                       })
                     }
                     className={inputCls}

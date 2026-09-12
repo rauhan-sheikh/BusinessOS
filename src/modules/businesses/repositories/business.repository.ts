@@ -109,6 +109,23 @@ export const businessRepository = {
   },
 
   /**
+   * Change an existing member's role within a business.
+   */
+  async updateMemberRole(
+    businessId: string,
+    membershipId: string,
+    role: "OWNER" | "ADMIN" | "ACCOUNTANT"
+  ) {
+    return prisma.businessUser.update({
+      where: { id: membershipId, businessId },
+      data: { role },
+      include: {
+        user: { select: { id: true, name: true, email: true, createdAt: true } },
+      },
+    });
+  },
+
+  /**
    * Remove a member from a business.
    */
   async removeMember(businessId: string, membershipId: string) {

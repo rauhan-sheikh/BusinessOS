@@ -1,6 +1,17 @@
 import { prisma } from "@/db";
-import type { TransactionType, OpeningBalanceType } from "@/generated/prisma/client";
+import type {
+  Prisma,
+  TransactionType,
+  BalanceDirection,
+} from "@/generated/prisma/client";
 import { AppError } from "@/shared/errors/app-error";
+import {
+  effectOf,
+  invert,
+  recomputeBalance,
+  type BalanceEffect,
+  type LedgerEntry,
+} from "../ledger";
 
 export interface TransactionFilterOptions {
   partyId?: string;
@@ -18,10 +29,58 @@ export interface CreateTransactionParams {
   createdById: string;
   transactionType: TransactionType;
   amountMinor: bigint;
-  openingBalanceType?: OpeningBalanceType | null;
+  direction?: BalanceDirection | null;
+  transactionDate?: Date | null;
   notes?: string | null;
   referenceNumber?: string | null;
-  reversedTransactionId?: string | null;
+}
+
+const LEDGER_ENTRY_SELECT = {
+  id: true,
+  transactionType: true,
+  direction: true,
+  amountMinor: true,
+  reversedTransactionId: true,
+} as const;
+
+/**
+ * Turns a scored effect into a Prisma atomic update.
+ *
+ * `increment` with a signed delta is applied in-place by Postgres under a row
+ * lock, so concurrent writers serialise instead of each reading a stale
+ * snapshot and overwriting the other.
+ */
+function balanceIncrement(effect: BalanceEffect, amountMinor: bigint) {
+  const delta = BigInt(effect.sign) * amountMinor;
+
+  return effect.column === "receivableMinor"
+    ? { receivableMinor: { increment: delta } }
+    : { payableMinor: { increment: delta } };
+}
+
+/** The opening totals for a balance row created by its first entry. */
+function balanceSeed(effect: BalanceEffect, amountMinor: bigint) {
+  const delta = BigInt(effect.sign) * amountMinor;
+
+  return {
+    receivableMinor: effect.column === "receivableMinor" ? delta : 0n,
+    payableMinor: effect.column === "payableMinor" ? delta : 0n,
+  };
+}
+
+async function assertPartyInBusiness(
+  tx: Prisma.TransactionClient,
+  partyId: string,
+  businessId: string
+) {
+  const party = await tx.party.findFirst({
+    where: { id: partyId, businessId },
+    select: { id: true },
+  });
+
+  if (!party) {
+    throw new AppError("Party not found", 404);
+  }
 }
 
 export const transactionRepository = {
@@ -32,9 +91,11 @@ export const transactionRepository = {
       businessId,
       ...(partyId ? { partyId } : {}),
       ...(type ? { transactionType: type } : {}),
+      // Filtered on the business date, not the insert timestamp, so back-dated
+      // entries fall in the period they actually belong to.
       ...(startDate || endDate
         ? {
-            createdAt: {
+            transactionDate: {
               ...(startDate ? { gte: startDate } : {}),
               ...(endDate ? { lte: endDate } : {}),
             },
@@ -62,7 +123,7 @@ export const transactionRepository = {
             select: { id: true, name: true, email: true },
           },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ transactionDate: "desc" }, { createdAt: "desc" }],
         take: limit,
         skip: offset,
       }),
@@ -83,102 +144,34 @@ export const transactionRepository = {
   },
 
   /**
-   * Executes atomic creation of a ledger transaction and updates the party's snapshot balance.
+   * Records a ledger entry and moves the party's balance, atomically.
+   *
+   * REVERSAL is rejected here: reversals carry guards this path cannot apply,
+   * and must go through reverseTransaction.
    */
   async createWithBalanceUpdate(params: CreateTransactionParams) {
+    if (params.transactionType === "REVERSAL") {
+      throw new AppError(
+        "Reversals cannot be recorded directly; reverse the original transaction instead.",
+        400
+      );
+    }
+
+    const effect = effectOf(params.transactionType, params.direction ?? null);
+
     return prisma.$transaction(async (tx) => {
-      // 1. Verify party exists and belongs to this business
-      const party = await tx.party.findFirst({
-        where: { id: params.partyId, businessId: params.businessId },
-        include: { balance: true },
-      });
+      await assertPartyInBusiness(tx, params.partyId, params.businessId);
 
-      if (!party) {
-        throw new AppError("Party not found", 404);
-      }
-
-      // 2. Fetch or initialize current balance
-      let currentBalance = party.balance;
-      if (!currentBalance) {
-        currentBalance = await tx.partyBalance.create({
-          data: {
-            businessId: params.businessId,
-            partyId: params.partyId,
-            receivableMinor: BigInt(0),
-            payableMinor: BigInt(0),
-          },
-        });
-      }
-
-      // 3. Compute net balance delta based on transaction type
-      // Net balance is defined as: (receivable - payable)
-      // Positive = Party owes Business. Negative = Business owes Party.
-      let netDelta = BigInt(0);
-      const amount = params.amountMinor;
-
-      switch (params.transactionType) {
-        case "SALE":
-          // Increases what customer owes us
-          netDelta = amount;
-          break;
-        case "PAYMENT_RECEIEVED":
-          // Decreases what customer owes us
-          netDelta = -amount;
-          break;
-        case "PURCHASE":
-          // Decreases net balance (increases what we owe vendor)
-          netDelta = -amount;
-          break;
-        case "PAYMENT_MADE":
-          // Increases net balance (reduces what we owe vendor)
-          netDelta = amount;
-          break;
-        case "OPENING_BALANCE":
-          netDelta = params.openingBalanceType === "RECEIVABLE" ? amount : -amount;
-          break;
-        case "ADJUSTMENT":
-          netDelta = params.openingBalanceType === "RECEIVABLE" ? amount : -amount;
-          break;
-        case "REVERSAL":
-          // Handled via reverseTransaction specific calculation
-          netDelta = params.openingBalanceType === "RECEIVABLE" ? amount : -amount;
-          break;
-      }
-
-      const currentNet = currentBalance.receivableMinor - currentBalance.payableMinor;
-      const newNet = currentNet + netDelta;
-
-      let newReceivable = BigInt(0);
-      let newPayable = BigInt(0);
-
-      if (newNet >= BigInt(0)) {
-        newReceivable = newNet;
-        newPayable = BigInt(0);
-      } else {
-        newReceivable = BigInt(0);
-        newPayable = -newNet;
-      }
-
-      // 4. Update PartyBalance snapshot atomically
-      const updatedBalance = await tx.partyBalance.update({
-        where: { id: currentBalance.id },
-        data: {
-          receivableMinor: newReceivable,
-          payableMinor: newPayable,
-        },
-      });
-
-      // 5. Create immutable transaction record
       const transaction = await tx.transaction.create({
         data: {
           businessId: params.businessId,
           partyId: params.partyId,
           transactionType: params.transactionType,
           amountMinor: params.amountMinor,
-          OpeningBalanceType: params.openingBalanceType ?? null,
+          direction: params.direction ?? null,
+          transactionDate: params.transactionDate ?? new Date(),
           notes: params.notes ?? null,
           referenceNumber: params.referenceNumber ?? null,
-          reversedTransactionId: params.reversedTransactionId ?? null,
           createdById: params.createdById,
         },
         include: {
@@ -187,12 +180,26 @@ export const transactionRepository = {
         },
       });
 
+      const updatedBalance = await tx.partyBalance.upsert({
+        where: { partyId: params.partyId },
+        create: {
+          businessId: params.businessId,
+          partyId: params.partyId,
+          ...balanceSeed(effect, params.amountMinor),
+        },
+        update: balanceIncrement(effect, params.amountMinor),
+      });
+
       return { transaction, updatedBalance };
     });
   },
 
   /**
-   * Reverses an existing transaction and restores the party balance atomically.
+   * Reverses an entry by posting an opposing REVERSAL entry.
+   *
+   * The original is never mutated. A transaction can be reversed at most once -
+   * enforced by the unique constraint on reversedTransactionId, so two
+   * concurrent requests cannot both pass a check and double-apply the inverse.
    */
   async reverseTransaction(
     originalTransactionId: string,
@@ -203,7 +210,7 @@ export const transactionRepository = {
     return prisma.$transaction(async (tx) => {
       const original = await tx.transaction.findFirst({
         where: { id: originalTransactionId, businessId },
-        include: { party: { include: { balance: true } } },
+        select: { ...LEDGER_ENTRY_SELECT, partyId: true, referenceNumber: true },
       });
 
       if (!original) {
@@ -214,82 +221,81 @@ export const transactionRepository = {
         throw new AppError("Cannot reverse a reversal transaction", 400);
       }
 
-      // Check if already reversed
-      const existingReversal = await tx.transaction.findFirst({
-        where: { reversedTransactionId: originalTransactionId, businessId },
-      });
+      const effect = invert(effectOf(original.transactionType, original.direction));
 
-      if (existingReversal) {
-        throw new AppError("This transaction has already been reversed", 400);
-      }
+      const reversal = await tx.transaction
+        .create({
+          data: {
+            businessId,
+            partyId: original.partyId,
+            transactionType: "REVERSAL",
+            amountMinor: original.amountMinor,
+            // Recorded for display and filtering. The engine re-derives the
+            // effect from the original rather than trusting this value.
+            direction: effect.column === "receivableMinor" ? "RECEIVABLE" : "PAYABLE",
+            transactionDate: new Date(),
+            notes: reason
+              ? `Reversal: ${reason}`
+              : `Reversal of transaction #${original.id.slice(0, 8)}`,
+            referenceNumber: original.referenceNumber
+              ? `REV-${original.referenceNumber}`
+              : null,
+            reversedTransactionId: original.id,
+            createdById: userId,
+          },
+          include: {
+            party: { select: { id: true, name: true } },
+            createdBy: { select: { id: true, name: true } },
+          },
+        })
+        .catch((err: unknown) => {
+          if (
+            typeof err === "object" &&
+            err !== null &&
+            (err as { code?: string }).code === "P2002"
+          ) {
+            throw new AppError("This transaction has already been reversed", 409);
+          }
+          throw err;
+        });
 
-      // Calculate inverse delta
-      let originalDelta = BigInt(0);
-      const amount = original.amountMinor;
-
-      switch (original.transactionType) {
-        case "SALE":
-          originalDelta = amount;
-          break;
-        case "PAYMENT_RECEIEVED":
-          originalDelta = -amount;
-          break;
-        case "PURCHASE":
-          originalDelta = -amount;
-          break;
-        case "PAYMENT_MADE":
-          originalDelta = amount;
-          break;
-        case "OPENING_BALANCE":
-        case "ADJUSTMENT":
-          originalDelta = original.OpeningBalanceType === "RECEIVABLE" ? amount : -amount;
-          break;
-      }
-
-      // Inverse effect:
-      const reverseDelta = -originalDelta;
-      const balance = original.party.balance!;
-      const currentNet = balance.receivableMinor - balance.payableMinor;
-      const newNet = currentNet + reverseDelta;
-
-      let newReceivable = BigInt(0);
-      let newPayable = BigInt(0);
-
-      if (newNet >= BigInt(0)) {
-        newReceivable = newNet;
-        newPayable = BigInt(0);
-      } else {
-        newReceivable = BigInt(0);
-        newPayable = -newNet;
-      }
-
-      await tx.partyBalance.update({
-        where: { id: balance.id },
-        data: {
-          receivableMinor: newReceivable,
-          payableMinor: newPayable,
-        },
-      });
-
-      const reversalTx = await tx.transaction.create({
-        data: {
+      await tx.partyBalance.upsert({
+        where: { partyId: original.partyId },
+        create: {
           businessId,
           partyId: original.partyId,
-          transactionType: "REVERSAL",
-          amountMinor: original.amountMinor,
-          OpeningBalanceType: reverseDelta >= BigInt(0) ? "RECEIVABLE" : "PAYABLE",
-          notes: reason ? `Reversal: ${reason}` : `Reversal of transaction #${original.id.slice(0, 8)}`,
-          referenceNumber: original.referenceNumber ? `REV-${original.referenceNumber}` : null,
-          reversedTransactionId: original.id,
-          createdById: userId,
+          ...balanceSeed(effect, original.amountMinor),
         },
-        include: {
-          party: { select: { id: true, name: true } },
-          createdBy: { select: { id: true, name: true } },
-        },
+        update: balanceIncrement(effect, original.amountMinor),
       });
 
-      return reversalTx;
+      return reversal;
+    });
+  },
+
+  /**
+   * Rebuilds a party's snapshot by replaying its whole ledger.
+   *
+   * The ledger is the source of truth; PartyBalance is a cache of it. This is
+   * the repair path for a snapshot suspected of having drifted, and the
+   * backfill used when balance semantics change.
+   */
+  async recomputeBalanceForParty(partyId: string, businessId: string) {
+    return prisma.$transaction(async (tx) => {
+      await assertPartyInBusiness(tx, partyId, businessId);
+
+      const entries: LedgerEntry[] = await tx.transaction.findMany({
+        where: { partyId, businessId },
+        select: LEDGER_ENTRY_SELECT,
+      });
+
+      const totals = recomputeBalance(entries);
+
+      return tx.partyBalance.upsert({
+        where: { partyId },
+        create: { businessId, partyId, ...totals },
+        update: totals,
+      });
     });
   },
 };

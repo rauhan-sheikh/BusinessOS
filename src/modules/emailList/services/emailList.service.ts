@@ -1,17 +1,27 @@
 import { emailListRepository } from "../repositories/emailList.repository";
 import type { EmailListInput } from "../schemas/emailList.schema";
 import { emailListSchema } from "../schemas/emailList.schema";
-import { ConflictError } from "@/shared/errors/conflict-error";
 
 export class EmailListService {
-  async addEmail(input: EmailListInput) {
-    const validatedData = emailListSchema.parse(input);
-    if (await emailListRepository.existsByEmail(validatedData.email)) {
-      throw new ConflictError("Email already exists");
-    }
-    return emailListRepository.createEmail(validatedData);
+  /**
+   * Records a newsletter subscription.
+   *
+   * Idempotent by design. This previously threw a 409 for an address already on
+   * the list - and because Better Auth adds every registered user's address on
+   * sign-up, the public unauthenticated endpoint became an account-existence
+   * oracle: a 409 meant "this person has an account here". Subscribing twice
+   * now looks exactly like subscribing once.
+   */
+  async subscribe(input: EmailListInput): Promise<void> {
+    const validated = emailListSchema.parse(input);
+    await emailListRepository.ensureEmail(validated.email);
   }
 
+  /**
+   * Adds an address discovered elsewhere (sign-up, invitation) to the list.
+   * Never throws: failing to record a marketing address must not fail the
+   * operation that produced it.
+   */
   async ensureEmail(email: string) {
     if (!email || !email.includes("@")) return;
     try {

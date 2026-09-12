@@ -3,14 +3,14 @@
 ![BusinessOS Banner](./public/banner.png)
 
 [![Next.js 16](https://img.shields.io/badge/Next.js-16.2.6-black?style=flat-square&logo=next.js)](https://nextjs.org/)
-[![React 19](https://img.shields.io/badge/React-19.0.0-blue?style=flat-square&logo=react)](https://react.dev/)
+[![React 19](https://img.shields.io/badge/React-19.2.4-blue?style=flat-square&logo=react)](https://react.dev/)
 [![Prisma ORM](https://img.shields.io/badge/Prisma-7.9.1-2D3748?style=flat-square&logo=prisma)](https://www.prisma.io/)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.0-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4.0-38B2AC?style=flat-square&logo=tailwind-css)](https://tailwindcss.com/)
 [![Better Auth](https://img.shields.io/badge/Better_Auth-1.6.27-purple?style=flat-square)](https://www.better-auth.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
 
-**BusinessOS** is an all-in-one financial operating system and double-entry accounting ledger crafted specifically for Small and Medium Enterprises (SMEs). Built with modern cloud-native standards, it replaces chaotic spreadsheets with high-precision accounting, eliminates IEEE-754 floating-point inaccuracies through 64-bit integer minor unit arithmetic, maintains immutable audit trails, and provides real-time visibility into counterparty balances, cash flow, and team operations.
+**BusinessOS** is a multi-tenant financial operating system for Small and Medium Enterprises. It replaces spreadsheets with an auditable ledger: money is stored as 64-bit integer minor units so no arithmetic ever passes through a float, balances are maintained atomically alongside the entries that produce them, and financial history is corrected by reversal rather than edited.
 
 ---
 
@@ -18,96 +18,116 @@
 
 - [Core Value Proposition](#core-value-proposition)
 - [Key Features](#key-features)
-  - [1. Financial Ledger & Zero Floating-Point Drift](#1-financial-ledger--zero-floating-point-drift)
+  - [1. Financial Ledger](#1-financial-ledger)
   - [2. Counterparty (Party) Management & Statements](#2-counterparty-party-management--statements)
-  - [3. Multi-Tenant Workspaces & RBAC](#3-multi-tenant-workspaces--rbac)
-  - [4. Cryptographic Team Invitations & Onboarding](#4-cryptographic-team-invitations--onboarding)
-  - [5. Automated Email List Sync](#5-automated-email-list-sync)
-  - [6. Immutable Security & Audit Logging](#6-immutable-security--audit-logging)
+  - [3. Multi-Tenant Workspaces & Permissions](#3-multi-tenant-workspaces--permissions)
+  - [4. Team Invitations & Onboarding](#4-team-invitations--onboarding)
+  - [5. Transactional Email](#5-transactional-email)
+  - [6. Security & Audit Logging](#6-security--audit-logging)
   - [7. Complete Mobile & Screen Responsiveness](#7-complete-mobile--screen-responsiveness)
 - [Tech Stack](#tech-stack)
 - [Project Architecture & Directory Structure](#project-architecture--directory-structure)
 - [Database Schema & Data Model](#database-schema--data-model)
 - [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [1. Clone & Install Dependencies](#1-clone--install-dependencies)
-  - [2. Environment Variables](#2-environment-variables)
-  - [3. Database Migrations & Client Generation](#3-database-migrations--client-generation)
-  - [4. Run Local Development Server](#4-run-local-development-server)
 - [Available Scripts](#available-scripts)
+- [Testing](#testing)
+- [Deployment](#deployment)
 - [Engineering Standards & Conventions](#engineering-standards--conventions)
+- [Known Limitations](#known-limitations)
 - [License](#license)
 
 ---
 
 ## Core Value Proposition
 
-Managing finances across fragmented spreadsheets, disconnected billing software, and manual ledgers creates costly reconciliation errors and floating-point rounding drift. **BusinessOS** solves this by providing:
-
-1. **Precision First**: Integer-based minor unit accounting (`amountMinor`, `receivableMinor`, `payableMinor`) guaranteeing exact balance integrity down to the smallest currency unit (paise/cents).
-2. **Double-Entry Balance Snapshots**: Every transaction atomically updates snapshot party balances in strict database transactions.
-3. **Multi-Tenant Isolation**: Complete organizational separation per business entity, allowing users to own, switch between, and collaborate across multiple businesses seamlessly.
-4. **Audit-Ready History**: Reversible entries, immutable logging, user attribution, and zero data loss.
+1. **Precision first.** All monetary amounts are `BigInt` minor units (`amountMinor`, `receivableMinor`, `payableMinor`). Parsing rejects anything that is not a positive decimal with at most two places, and formatting renders the integer directly through `Intl.NumberFormat` rather than dividing into a `number` — so no value is rounded on its way to the screen.
+2. **Balances that cannot silently drift.** Every entry moves exactly one balance column by a signed delta, applied as an atomic database increment inside the same transaction that writes the entry. Concurrent writers serialise on the row instead of overwriting each other.
+3. **Gross receivable and payable.** The two sides are tracked independently and never netted, so a counterparty that is both a customer and a supplier carries a real figure on each side.
+4. **Multi-tenant isolation.** Every query is scoped to the active workspace, resolved server-side from membership — never from a client-supplied identifier.
+5. **Audit-ready history.** Entries are never edited or deleted; corrections are posted as linked `REVERSAL` entries, and privileged actions are recorded against a user, IP and user-agent.
 
 ---
 
 ## Key Features
 
-### 1. Financial Ledger & Zero Floating-Point Drift
-- **Integer Minor Unit Math**: All monetary amounts are processed and stored as 64-bit BigInt minor units (e.g., ₹100.50 is stored as `10050n`), preventing IEEE-754 floating-point inaccuracies.
-- **Atomic Balance Updates**: Balance computations happen inside Prisma interactive transactions (`$transaction`), updating cached `PartyBalance` records atomically.
-- **Audit-Compliant Reversals**: Transactions cannot be arbitrarily deleted. Instead, an audit-compliant `REVERSAL` transaction is created with reverse-delta accounting.
-- **Multi-Type Financial Ledger**: Supports standard double-entry transaction types:
-  - `SALE`: Increases customer receivable balance.
-  - `PURCHASE`: Increases supplier payable balance.
-  - `PAYMENT_RECEIVED`: Decreases receivable balance / records cash inflow.
-  - `PAYMENT_MADE`: Decreases payable balance / records cash outflow.
-  - `OPENING_BALANCE`: Sets initial balances (`RECEIVABLE` or `PAYABLE`).
-  - `ADJUSTMENT`: Reconciles discrepancies with recorded notes.
-  - `REVERSAL`: Reverses previously executed transactions with referenced links.
-- **Server-Side Pagination & Filtering**: Real-time filtering by counterparty, transaction type, date range (`from` / `to`), and keyword search with customizable page sizes.
-- **Enterprise CSV Export**: One-click transaction export incorporating UTF-8 Byte Order Marks (`\uFEFF`) to prevent character distortion across Microsoft Excel, Apple Numbers, Google Sheets, and ERP tools.
+### 1. Financial Ledger
+
+- **Integer minor-unit arithmetic.** ₹1,250.50 is stored as `125050n`. `toMinorUnits()` raises a 400 on non-numeric input, negatives, exponent notation, or more than two decimal places rather than coercing them.
+- **Gross balance tracking.** `receivableMinor` and `payableMinor` accumulate separately; the net is derived for display only. A balance may legitimately go negative — an overpayment leaves a negative receivable, which is a customer advance.
+- **Atomic, concurrency-safe updates.** Entry creation and the balance change commit together, using `increment`/`decrement` so Postgres applies them in place under a row lock.
+- **Back-datable entries.** `transactionDate` is the business date and may be set in the past; `createdAt` records when the row was written and never moves. Filtering and sorting use `transactionDate`.
+- **Transaction types:**
+  - `SALE` — increases the customer receivable
+  - `PURCHASE` — increases the supplier payable
+  - `PAYMENT_RECEIVED` — decreases the receivable
+  - `PAYMENT_MADE` — decreases the payable
+  - `OPENING_BALANCE` — seeds either side, via `direction`
+  - `ADJUSTMENT` — corrects either side, via `direction`
+  - `REVERSAL` — the inverse of a specific entry; **never postable directly**, only through the reversal endpoint
+- **Single reversal, enforced by the database.** `reversedTransactionId` is a unique self-relation, so two concurrent reversal requests cannot both succeed.
+- **Balance repair path.** `recomputeBalance()` replays a party's ledger; the snapshot is a cache of it, and an integration test asserts the two agree.
+- **Server-side pagination and filtering** by counterparty, type, date range and keyword.
+- **CSV export** that pages until complete (rather than silently truncating), escapes values that spreadsheets would otherwise evaluate as formulas, and carries a UTF-8 byte order mark for Excel.
 
 ### 2. Counterparty (Party) Management & Statements
-- **Centralized Directory**: Manage customers, vendors, suppliers, and partners in a single unified interface.
-- **Statutory Details**: Capture tax identifiers (GSTIN, PAN), billing addresses, phone numbers, and email contacts.
-- **Real-Time Balance Standings**: Instant calculation of net balances:
-  - `+₹... To Collect` (Receivable)
-  - `-₹... To Pay` (Payable)
-  - `Settled (₹0.00)`
-- **Dynamic Statement Ledgers**: Per-party transaction statement view showing historical debit/credit entries, running balance calculations, and print-ready statements.
 
-### 3. Multi-Tenant Workspaces & RBAC
-- **Workspace Hierarchy**: Users can create, own, or join multiple independent business workspaces.
-- **Granular Roles**:
-  - `OWNER`: Full administrative, financial, billing, and workspace management privileges.
-  - `ADMIN`: Team management, counterparty control, and ledger operations.
-  - `ACCOUNTANT`: Read/write access to transactions, parties, and statements without workspace destruction permissions.
-- **Fast Workspace Switching**: Instant cookie-backed active workspace selection directly from the top navigation bar without session teardown.
+- Centralised directory of customers, vendors and other counterparties, with GSTIN, PAN, address and contact details.
+- Real-time standing per party: amount to collect, amount to pay, or settled.
+- **Paged statements** showing each entry with its business date, author and reversal status, exportable to CSV.
+- Server-side search and filtering with pagination; workspace-wide totals are computed by aggregate, so they remain correct while paging.
 
-### 4. Cryptographic Team Invitations & Onboarding
-- **Cryptographic Token Invites**: Workspace owners and admins can invite team members with assigned roles using secure 7-day tokens.
-- **Frictionless Onboarding (`/invite/[token]`)**:
-  - **Existing Users**: Join workspace instantly with a single click.
-  - **New Users**: Set account password, automatically verify their email address, and immediately enter the workspace dashboard.
-- **Invitation Lifecycle Management**: Monitor pending invitations, copy direct shareable invite URLs, or revoke pending invitations in real time.
+### 3. Multi-Tenant Workspaces & Permissions
 
-### 5. Automated Email List Sync
-- **Marketing & Outreach Capture**: Automatically registers emails into `EmailList` across:
-  - Direct user sign-ups (Email & Password)
-  - Social OAuth sign-ups (Google)
-  - Team member invitations
-  - Marketing landing page newsletter subscriptions
+Users can own or join multiple independent workspaces and switch between them from the top bar.
 
-### 6. Immutable Security & Audit Logging
-- **Proxy Route Protection (`src/proxy.ts`)**: Session-authenticated proxy layer enforcing workspace context and route authorization.
-- **Audit Logs**: Comprehensive event capture logging user ID, business ID, action type, IP address, user-agent, and JSON metadata payloads for compliance and forensic analysis.
+Authorization is a **named permission matrix** (`src/modules/auth/permissions.ts`) rather than role-string comparisons, enforced in the service layer so no caller — route, server component or otherwise — can bypass it.
+
+| Permission | OWNER | ADMIN | ACCOUNTANT |
+|---|:--:|:--:|:--:|
+| Parties: view / create / update | ✓ | ✓ | ✓ |
+| Transactions: view / create | ✓ | ✓ | ✓ |
+| Members: view | ✓ | ✓ | ✓ |
+| Business settings: view | ✓ | ✓ | ✓ |
+| Party archive | ✓ | ✓ | — |
+| Transaction reverse | ✓ | ✓ | — |
+| Members: invite / remove / change role | ✓ | ✓ | — |
+| Invitations: view | ✓ | ✓ | — |
+| Email templates: manage | ✓ | ✓ | — |
+| Audit trail: view | ✓ | ✓ | — |
+| Business settings: update | ✓ | — | — |
+| Grant or revoke OWNER | ✓ | — | — |
+
+Granting and revoking ownership is reserved to `OWNER`, and a workspace always retains at least one owner.
+
+### 4. Team Invitations & Onboarding
+
+- Invitations carry a 32-byte random token and expire after 7 days. The raw token is never returned by the API; callers permitted to invite receive a ready-built invite URL instead.
+- **Existing users** join with one click, after the invited address is matched against their account.
+- **New users** set a password, and their address is marked verified in the same transaction that creates the membership — following a link sent to that address is what proves ownership of it. If membership fails, the part-created account is rolled back.
+- Pending invitations can be copied or revoked.
+
+### 5. Transactional Email
+
+Email content lives in `src/lib/email/templates`, not in a third-party dashboard, so a fresh deployment sends correct mail with no manual setup and the wording is reviewed alongside the code that triggers it.
+
+- Verification, password reset and team invitation, sharing a table-based layout with inline styles for mail-client compatibility, each sent with a generated plain-text part.
+- Variables are substituted into `{{NAME}}` placeholders and HTML-escaped; link placeholders are restricted to `http`/`https`.
+- **Workspace owners and admins can customise the invitation wording** from Settings → Email Templates, with a sandboxed preview and one-click restore. Overrides render through the same escaping path as the built-ins.
+- Verification and password reset are **platform-scoped and deliberately not tenant-editable**: they are sent with no workspace context and on behalf of every tenant.
+
+### 6. Security & Audit Logging
+
+- **Optimistic routing guard** (`src/proxy.ts`) reads the session cookie only; real authorization happens server-side in the app layout and in every route and service.
+- **Audit log** of privileged actions (`AuditAction` enum) with user, workspace, IP, user-agent and JSON metadata. Entries written inside a transaction commit or roll back with it.
+- Session and membership are resolved once per request via React `cache()`.
+- Validated environment (`src/lib/env.ts`), `trustedOrigins`, secure cookies in production, Better Auth rate limiting, and Google account linking.
+- The public newsletter endpoint answers identically whether or not an address is known, so it cannot be used to test whether someone has an account.
 
 ### 7. Complete Mobile & Screen Responsiveness
-- **Strict Breakpoints**: Dedicated styling and layouts for mobile (`< 640px`), tablet (`640px - 1024px`), and desktop (`> 1024px`).
-- **Mobile Navigation Drawer**: Accessible slide-out hamburger navigation containing workspace switchers, navigation links, and profile actions.
-- **Horizontal Ledger Wrappers**: All tables and balance ledgers are wrapped in `overflow-x-auto` to preserve layout integrity on small screens.
-- **Responsive Form Grids**: Forms and modal dialogs dynamically adapt with stacked mobile controls and multi-column desktop arrangements.
+
+- Dedicated layouts for mobile (`< 640px`), tablet (`640px–1024px`) and desktop (`> 1024px`).
+- Mobile navigation drawer containing links, workspace switcher and profile actions.
+- All tables wrapped in `overflow-x-auto`; forms and modals stack on narrow viewports.
 
 ---
 
@@ -115,14 +135,15 @@ Managing finances across fragmented spreadsheets, disconnected billing software,
 
 | Layer | Technology | Purpose |
 |---|---|---|
-| **Framework** | [Next.js 16.2.6](https://nextjs.org/) | App Router, React Server Components, Turbopack, React 19 |
-| **Language** | [TypeScript 5.x](https://www.typescriptlang.org/) | Strict static typing, custom domain models |
-| **Database** | PostgreSQL ([Neon](https://neon.tech/)) | Cloud-native serverless relational database |
-| **ORM** | [Prisma 7.9.1](https://www.prisma.io/) | Schema management, type-safe queries, migration engine |
-| **Authentication** | [Better Auth 1.6.27](https://www.better-auth.com/) | Email/password, OAuth, session cookies, email verification |
-| **Email Service** | [Resend](https://resend.com/) | Transactional emails (verification, team invites) |
-| **Styling** | [Tailwind CSS v4](https://tailwindcss.com/) | Modern utility-first CSS framework |
-| **Validation** | [Zod 4.x](https://zod.dev/) | Runtime request validation & data parsing |
+| **Framework** | [Next.js 16.2.6](https://nextjs.org/) | App Router, React Server Components, Turbopack |
+| **Language** | [TypeScript 5.x](https://www.typescriptlang.org/) | Strict mode, no `any` in application code |
+| **Database** | PostgreSQL ([Neon](https://neon.tech/)) | Cloud-native serverless Postgres |
+| **ORM** | [Prisma 7.9.1](https://www.prisma.io/) | Schema, migrations, type-safe queries |
+| **Authentication** | [Better Auth 1.6.27](https://www.better-auth.com/) | Email/password, Google OAuth, database sessions |
+| **Email** | [Resend](https://resend.com/) | Delivery; content lives in this repository |
+| **Styling** | [Tailwind CSS v4](https://tailwindcss.com/) | Utility-first CSS |
+| **Validation** | [Zod 4.x](https://zod.dev/) | Request bodies, query strings and environment |
+| **Testing** | [Vitest 4](https://vitest.dev/) | Unit and database-backed integration tests |
 
 ---
 
@@ -130,48 +151,48 @@ Managing finances across fragmented spreadsheets, disconnected billing software,
 
 ```
 BusinessOS/
+├── .github/workflows/ci.yml       # Typecheck, lint, tests, migrations, build
 ├── prisma/
-│   ├── schema.prisma              # Database schema & entity definitions
+│   ├── schema.prisma              # Database schema
 │   └── migrations/                # Version-controlled SQL migration history
 ├── src/
 │   ├── app/
-│   │   ├── (app)/                 # Authenticated workspace application shell
-│   │   │   ├── components/        # AppTopBar, AppFooter, navigation drawers
-│   │   │   ├── dashboard/         # Financial KPI metrics, cashflow & overview
-│   │   │   ├── parties/           # Party directory, balance ledger & statements
-│   │   │   ├── transactions/      # Enterprise financial ledger, filters & CSV export
-│   │   │   └── settings/          # Workspace settings, team invitations & audit log
-│   │   ├── (auth)/                # Sign in, Sign up, Forgot/Reset password flows
-│   │   ├── (marketing)/           # Landing page, Terms, Privacy, Cookie policies
-│   │   ├── (onboarding)/          # Business creation wizard
-│   │   ├── api/                   # REST API routes (auth, businesses, parties, transactions)
-│   │   ├── invite/[token]/        # Team member invite acceptance portal
-│   │   ├── icon.tsx               # Dynamic favicon & brand icons
-│   │   └── layout.tsx             # Root layout & font configurations
-│   ├── db/                        # Prisma client instance & connection pool
-│   ├── generated/                 # Generated Prisma types & client
+│   │   ├── (app)/                 # Authenticated application shell
+│   │   │   ├── components/        # AppTopBar, AppFooter
+│   │   │   ├── dashboard/         # Receivable/payable overview & recent ledger
+│   │   │   ├── parties/           # Party directory & per-party statements
+│   │   │   ├── transactions/      # Ledger, filters & CSV export
+│   │   │   └── settings/          # Profile, team, email templates, audit trail
+│   │   ├── (auth)/                # Sign in, sign up, password reset
+│   │   ├── (marketing)/           # Landing page and legal pages
+│   │   ├── (onboarding)/          # Business creation
+│   │   ├── api/                   # Route handlers
+│   │   └── invite/[token]/        # Invitation acceptance
+│   ├── db/                        # Prisma client singleton
+│   ├── generated/prisma/          # Generated client (gitignored)
 │   ├── lib/
 │   │   ├── auth.ts                # Better Auth server configuration
-│   │   ├── auth-client.ts         # Better Auth client React hooks
-│   │   └── email.ts               # Resend transactional email client
-│   ├── middleware/                # Route security & middleware layers
-│   ├── modules/                   # Domain-Driven Architecture (Services & Repositories)
-│   │   ├── audit/                 # Audit logging domain service
-│   │   ├── auth/                  # Session verification & workspace resolution
-│   │   ├── businesses/            # Business management, members & invitations
-│   │   ├── emailList/             # Marketing subscriber list & sync hooks
-│   │   ├── parties/               # Party directory & balance snapshot calculations
-│   │   └── transactions/          # Ledger engine, minor unit math & reversals
-│   ├── proxy.ts                   # Next.js 16 route proxy & authentication guard
-│   └── shared/                    # Shared reusable components & utilities
-│       ├── components/            # UI components (Logo, Icons, Modal, Buttons)
-│       ├── errors/                # Standardized AppError hierarchy
-│       └── utils/                 # Currency formatters & UTF-8 BOM CSV exporter
-├── AGENTS.md                      # Mandatory AI agent rules & maintenance directives
-├── package.json                   # Dependencies & npm scripts
-├── tsconfig.json                  # Strict TypeScript configuration
-└── README.md                      # Project documentation
+│   │   ├── auth-client.ts         # Better Auth React client
+│   │   ├── env.ts                 # Zod-validated server environment
+│   │   └── email/                 # Sender, renderer and template catalogue
+│   ├── modules/                   # Domain modules (schemas / services / repositories)
+│   │   ├── audit/                 # Audit logging
+│   │   ├── auth/                  # Permission matrix & request context
+│   │   ├── businesses/            # Workspaces, members, invitations, email templates
+│   │   ├── emailList/             # Newsletter subscribers
+│   │   ├── parties/               # Counterparties & balances
+│   │   └── transactions/          # Ledger engine, entries & reversals
+│   ├── proxy.ts                   # Next.js 16 optimistic routing guard
+│   └── shared/
+│       ├── api/                   # Error boundary, cookies, request metadata
+│       ├── components/            # Logo and brand marks
+│       ├── errors/                # AppError
+│       └── utils/                 # Currency, CSV, serialization, rate limiting
+├── AGENTS.md                      # Mandatory AI agent rules
+└── README.md
 ```
+
+A feature flows `Route handler → Zod schema → Service (authorization, business rules) → Repository → Prisma`. Authorization and audit logging live in the service layer, so they apply regardless of caller.
 
 ---
 
@@ -185,32 +206,25 @@ erDiagram
     User ||--o{ Invitation : "invites"
     User ||--o{ Session : "authenticates"
     User ||--o{ Account : "links"
-    
+
     Business ||--o{ BusinessUser : "members"
     Business ||--o{ Party : "manages"
     Business ||--o{ Transaction : "records"
     Business ||--o{ AuditLog : "tracks"
     Business ||--o{ Invitation : "issues"
-    
+    Business ||--o{ EmailTemplateOverride : "customises"
+
     Party ||--o{ Transaction : "incurs"
     Party ||--|| PartyBalance : "has"
-
-    User {
-        string id PK
-        string name
-        string email UK
-        boolean emailVerified
-        string phone
-        boolean isActive
-    }
+    Transaction |o--o| Transaction : "reverses"
 
     Business {
         string id PK
         string name
-        string legalName
         string gstin
         string pan
         string currency
+        string timezone
     }
 
     BusinessUser {
@@ -224,10 +238,9 @@ erDiagram
         string id PK
         string businessId FK
         string name
-        string phone
-        string email
         string gstin
         string pan
+        boolean isArchived
     }
 
     PartyBalance {
@@ -243,8 +256,20 @@ erDiagram
         string partyId FK
         TransactionType transactionType
         BigInt amountMinor
+        BalanceDirection direction
+        datetime transactionDate
         string referenceNumber
-        string reversedTransactionId
+        string reversedTransactionId FK
+        datetime createdAt
+    }
+
+    AuditLog {
+        string id PK
+        string businessId FK
+        string userId FK
+        AuditAction actionType
+        json metadata
+        string ipAddress
     }
 
     Invitation {
@@ -256,18 +281,34 @@ erDiagram
         InvitationStatus status
         datetime expiresAt
     }
+
+    EmailTemplateOverride {
+        string id PK
+        string businessId FK
+        string templateKey
+        string subject
+        string html
+    }
 ```
+
+**Invariants worth knowing:**
+
+- `Transaction.amountMinor > 0` is a database `CHECK`; sign is carried by `transactionType` and `direction`.
+- `Transaction.reversedTransactionId` is `UNIQUE`, so an entry can be reversed at most once.
+- Financial foreign keys are `RESTRICT`, so a business, party or author with ledger history cannot be deleted.
+- `PartyBalance` is a cache of the ledger, not an independent source of truth.
 
 ---
 
 ## Getting Started
 
 ### Prerequisites
-- **Node.js**: v20.x or higher
-- **npm**: v10.x or higher
-- **PostgreSQL**: PostgreSQL 15+ or a serverless instance from [Neon](https://neon.tech/)
 
-### 1. Clone & Install Dependencies
+- **Node.js** 22.x (the version CI runs; 20.x should also work)
+- **npm** 10.x
+- **PostgreSQL** 15+, or a [Neon](https://neon.tech/) instance
+
+### 1. Clone & install
 
 ```bash
 git clone https://github.com/rauhan-sheikh/BusinessOS.git
@@ -275,49 +316,46 @@ cd BusinessOS
 npm install
 ```
 
-### 2. Environment Variables
+> `.npmrc` sets `legacy-peer-deps`. npm 10.9.2's strict resolver crashes while walking Vitest's optional-peer graph; the reasoning is recorded in the file and should be revisited once npm ships a fix.
 
-Create a `.env` file in the root directory:
+### 2. Environment variables
+
+Copy `.env.example` to `.env` and fill it in. The schema in `src/lib/env.ts` validates these at startup, so a missing or malformed value fails immediately and names itself.
 
 ```env
-# Database Connection (PostgreSQL / Neon)
-DATABASE_URL="postgresql://user:password@ep-sample-123456.us-east-2.aws.neon.tech/businessos?sslmode=require"
+DATABASE_URL="postgresql://user:password@localhost:5432/businessos?schema=public"
 
-# Better Auth Configuration
-BETTER_AUTH_SECRET="your-super-secret-random-32-byte-string"
-BETTER_AUTH_URL="http://localhost:3000"
+# At least 32 characters. BETTER_AUTH_SECRET is accepted as an alias.
+AUTH_SECRET=
+BETTER_AUTH_URL=http://localhost:3000
+NEXT_PUBLIC_BETTER_AUTH_URL=http://localhost:3000
 
-# Resend Email Integration
-RESEND_API_KEY="re_your_resend_api_key"
-EMAIL_FROM="BusinessOS <no-reply@yourdomain.com>"
-RESEND_VERIFICATION_TEMPLATE_ALIAS="email-verification"
+RESEND_API_KEY=
+EMAIL_FROM="BusinessOS <noreply@mail.example.com>"
 
-# Social Authentication (Optional)
-GOOGLE_CLIENT_ID=""
-GOOGLE_CLIENT_SECRET=""
+# Optional: Google sign-in is unavailable when unset.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
 ```
 
-### 3. Database Migrations & Client Generation
+No email template configuration is required — content ships with the application.
 
-Execute migrations and generate the Prisma Client:
+### 3. Database
 
 ```bash
-# Run pending migrations
-npx prisma migrate deploy
-
-# Generate Prisma client
-npx prisma generate
+npx prisma migrate deploy   # apply migrations
+npx prisma generate         # generate the client
 ```
 
-> **Development Note**: When introducing schema changes locally, always generate named migrations with `npx prisma migrate dev --name <change_name>`. Never use `prisma db push` in production branches.
+> When changing the schema locally, create a named migration with `npx prisma migrate dev --name <change_name>`. Never use `prisma db push` on a branch that will be deployed. Renames of enum values or columns must be hand-edited into `ALTER ... RENAME` — Prisma proposes a destructive drop-and-recreate, which would discard ledger data.
 
-### 4. Run Local Development Server
+### 4. Run
 
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+Open [http://localhost:3000](http://localhost:3000).
 
 ---
 
@@ -325,34 +363,94 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 | Command | Action |
 |---|---|
-| `npm run dev` | Starts the Next.js development server with Turbopack |
-| `npm run build` | Generates Prisma client, runs migrations, and builds production bundles |
-| `npm run start` | Runs the production-optimized Next.js server |
-| `npm run lint` | Executes ESLint analysis |
-| `npx tsc --noEmit` | Runs full static TypeScript type checks |
-| `npx prisma studio` | Launches Prisma Studio GUI for exploring database records |
-| `npx prisma migrate dev` | Creates and applies a new migration in development |
+| `npm run dev` | Development server with Turbopack |
+| `npm run build` | Generates the Prisma client and builds for production |
+| `npm start` | Production server |
+| `npm run lint` | ESLint, failing on any warning |
+| `npm test` | Full test suite |
+| `npm run test:watch` | Tests in watch mode |
+| `npm run test:coverage` | Tests with a V8 coverage report |
+| `npm run db:deploy` | Applies pending migrations (deliberately **not** part of `build`) |
+| `npx tsc --noEmit` | Type check |
+| `npx prisma studio` | Browse the database |
+
+---
+
+## Testing
+
+[Vitest](https://vitest.dev/) covers the parts of the system where being wrong is expensive:
+
+- **Unit** — minor-unit parsing and formatting, the ledger effect table, balance replay (including a randomised property test against incremental application), the permission matrix, and CSV escaping.
+- **Integration** — real database behaviour that cannot be mocked: that concurrent balance updates are not lost, that the unique constraint blocks a double reversal, that the `CHECK` constraint rejects a non-positive amount, that privilege escalation paths are closed, and that snapshots still agree with the ledger.
+
+Integration tests skip themselves when `DATABASE_URL` is unset, so `npm test` runs without a local database. CI provides a Postgres service container so they actually execute.
+
+```bash
+npm test
+```
+
+---
+
+## Deployment
+
+```
+push to main → CI (typecheck, lint, test, migrate-from-empty, drift check, build)
+             → migrate job (production, gated)
+             → Vercel → Neon
+```
+
+**Migrations are not applied during the build.** `prisma migrate deploy` used to run inside `npm run build`, which meant they were applied in the build container before any deploy gate, on preview builds as well as production, and with no way back — Vercel's instant rollback reverts code only, leaving the new schema in place.
+
+They now run as a separate `migrate` job in `.github/workflows/ci.yml`, which only executes on a push to `main`, only after the full verification job is green, and only one at a time.
+
+### One-time setup
+
+1. Add a repository secret **`PRODUCTION_DATABASE_URL`** (GitHub → Settings → Secrets and variables → Actions), set to Neon's **direct, non-pooled** connection string. Migrations need a real session, which a pooled connection cannot guarantee.
+2. Create a GitHub environment named **`production`** (GitHub → Settings → Environments). Adding a required reviewer there turns every migration run into a manual approval gate.
+
+Until the secret exists, the job will fail rather than silently skip — which is the intended behaviour.
+
+### Running migrations by hand
+
+```bash
+MIGRATION_DATABASE_URL="<neon direct url>" npm run db:deploy
+```
+
+`prisma.config.ts` prefers `MIGRATION_DATABASE_URL` over `DATABASE_URL`, so this works without touching the application's own connection string.
+
+### Migration safety
+
+Vercel deploys on the same push the migrate job runs on, so code and schema change at roughly the same moment with no strict ordering between them. Prefer **expand-then-contract**: add before you remove, and let a deploy pass between the two, so old and new code can both run against the intermediate schema.
+
+Renames are the exception and need care — `ALTER ... RENAME` is data-preserving but not backward-compatible, so the previous code breaks the moment it lands. Plan those for a quiet moment.
 
 ---
 
 ## Engineering Standards & Conventions
 
-1. **Currency & Minor Units**:
-   - Always store currency amounts in minor units (`BigInt` / `amountMinor`).
-   - Use `toMinorUnits()` and `toMajorUnits()` from `@/shared/utils/currency` for transformations.
-   - Format for display using `formatCurrency(minorAmount, "INR")`.
-2. **Double-Entry & Immutability**:
-   - Financial ledger entries must never be mutated or hard-deleted.
-   - Use reversal transactions (`REVERSAL`) to nullify prior entries with full audit trail links.
-3. **Mobile & Viewport Responsiveness**:
-   - Every page, component, table, and modal must function seamlessly across mobile (< 640px), tablet (640px - 1024px), and desktop (> 1024px).
-   - Tables must be wrapped with `overflow-x-auto`.
-   - Modals and toolbars must stack cleanly on smaller viewports.
-4. **Documentation Maintenance**:
-   - Whenever any worthwhile architectural, schema, or functional changes are made to the codebase, **always update `README.md`** to keep documentation synchronized.
+1. **Money.** Store minor units as `BigInt`. Convert with `toMinorUnits()`; display with `formatCurrency()` or `toDecimalString()`. `toMajorUnits()` is lossy above `Number.MAX_SAFE_INTEGER` and is for interop only.
+2. **Ledger immutability.** Never mutate or delete a posted entry. Correct with a `REVERSAL`, which links to the original.
+3. **Authorization.** Ask for a named permission from `src/modules/auth/permissions.ts`; never compare role strings. Enforce in the service layer, not in route bodies.
+4. **Errors.** Throw `AppError(message, status)`; `withApiHandler` maps it, along with Zod and Prisma errors, to a consistent response. Never return an internal message to a caller.
+5. **Tenancy.** Every query is scoped by `businessId` resolved from membership. Never trust a client-supplied workspace identifier.
+6. **Responsiveness.** Every page, table, form and modal must work at mobile, tablet and desktop widths. Tables are wrapped in `overflow-x-auto`.
+7. **Documentation.** Update this README whenever schema, API routes or architecture change.
+
+---
+
+## Known Limitations
+
+Honest about what is not built yet:
+
+- **Minor-unit exponent is fixed at 2.** Currencies with a different exponent (JPY, KWD) are not supported. Currency also cannot be changed once the ledger has entries, since stored amounts are denominated in it.
+- **Subsidiary ledger, not a general ledger.** There is no chart of accounts and no debit/credit pairing, so a trial balance, P&L or balance sheet cannot be produced from this data. Invoices, payments with allocation, and reporting are the next major module.
+- **Rate limiting is in-process**, so on serverless it is per-instance rather than global. Adequate against a naive script; not a defence against a distributed attacker.
+- **Party search uses `ILIKE`**, which cannot use an index. A trigram index is needed before the directory grows large.
+- **No shared UI component library yet.** Feedback still uses `alert()`/`confirm()` in places, and there are no `error.tsx` / `loading.tsx` boundaries.
+- **Users with ledger history cannot be deleted** (foreign keys are `RESTRICT`), so there is no data-erasure path yet.
 
 ---
 
 ## License
 
-This project is licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE).

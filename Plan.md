@@ -575,31 +575,35 @@ The `Transaction` model contains:
 - transaction type
 - amount
 - opening balance type
+- direction (which balance column the entry moves)
+- transaction date (the business date, which may be back-dated)
 - notes
 - reference number
-- reversal reference
+- reversal reference (unique, so an entry is reversed at most once)
 - created by
-- creation timestamp
+- creation timestamp (when the row was written; distinct from the business date)
 
-Transaction types currently include:
+Transaction types:
 
 ```text
 SALE
 PURCHASE
-PAYMENT_RECEIEVED
+PAYMENT_RECEIVED
 PAYMENT_MADE
 OPENING_BALANCE
 ADJUSTMENT
 REVERSAL
 ```
 
-There is currently a typo in:
+The typo this section previously recorded (`PAYMENT_RECEIEVED`) was corrected on
+the ledger-hardening branch, using `ALTER TYPE ... RENAME VALUE` so existing
+rows were renamed in place rather than dropped and recreated. The enum
+`OpeningBalanceType` became `BalanceDirection` at the same time, since it
+applies to adjustments and reversals as well as opening balances.
 
-```text
-PAYMENT_RECEIEVED
-```
-
-which should eventually be corrected carefully through a proper migration rather than casually changing production data.
+`REVERSAL` is not directly postable by a client. It was accepted by the create
+endpoint originally, which let any member move a balance arbitrarily while
+bypassing every reversal guard; it is now produced only by the reversal path.
 
 ---
 
@@ -680,7 +684,26 @@ Prisma's:
 prisma.$transaction()
 ```
 
-will be used for these atomic operations.
+is used for these atomic operations.
+
+One thing this section did not originally say, and which turned out to matter:
+wrapping both writes in a transaction is **not sufficient on its own**. The
+first implementation read the balance, computed the new value in JavaScript and
+wrote it back as an absolute figure. Under Postgres's default READ COMMITTED
+isolation two concurrent writers each read the same snapshot and the second
+overwrote the first, so the ledger and the snapshot diverged permanently with no
+error raised anywhere.
+
+The fix was to make every entry move exactly one column by a signed delta, so
+the update can be expressed as an atomic `increment` that Postgres applies in
+place under a row lock. An integration test fires twenty-five concurrent entries
+at one party; against the original implementation it produced a fifth of the
+correct balance.
+
+The two columns are also tracked **gross**. They were previously netted into a
+single signed figure, which meant a counterparty that was both a customer and a
+supplier lost both real totals — and gross receivable and payable could not be
+recovered from the snapshot afterwards, only by replaying the ledger.
 
 ---
 
@@ -1720,23 +1743,46 @@ This keeps the authentication boundary clean.
 
 # 48. Current Immediate Next Steps
 
-The authentication backend foundation is essentially established.
+> Updated after the ledger-hardening branch. The authentication UI described
+> below is **built**; this section previously still listed it as the next phase.
 
-The next implementation phase should be the **authentication UI**.
+Authentication UI, business onboarding, active business context, multi-business
+switching, team invitations, the party directory and the financial ledger are
+all implemented and deployed.
 
-That should include:
+The foundation beneath them has since been hardened:
 
 ```text
-Register
-Login
-Continue with Google
-Email verification state
-Verification success/failure
-Forgot password
-Reset password
-Logout
-Authenticated application shell
+Gross receivable/payable balances, applied atomically
+Named permission matrix enforced in the service layer
+Transactional email owned by the codebase, customisable per workspace
+Shared API error boundary and request-scoped context
+Vitest suite with database-backed integration tests
+CI on every push
 ```
+
+The next implementation phase is the first module on top of that foundation:
+
+```text
+Invoices
+Invoice lines
+Payments with allocation against invoices
+Gapless per-business invoice numbering
+Aging reports
+```
+
+Before or alongside that, the user-facing layer needs its own pass: a shared
+component library, a toast system to replace the remaining alert()/confirm()
+calls, error and loading boundaries, and the accessibility work on forms and
+modals.
+
+A decision to make when invoicing starts: the current model is a **subsidiary
+ledger** (receivables and payables against counterparties), not a general
+ledger. There is no chart of accounts and no debit/credit pairing, so a trial
+balance or P&L cannot be produced from it. Invoices can be built on the
+subsidiary model as it stands; producing statutory financial statements later
+would require introducing a journal. That choice should be made deliberately
+rather than drifted into.
 
 The UI should consume Better Auth rather than recreating authentication APIs unnecessarily.
 
@@ -2000,21 +2046,39 @@ At the same time, because there are currently no meaningful production users, th
 
 # 56. Current Known Technical Debt / Things to Clean Up
 
-Known items include:
+Resolved on the ledger-hardening branch:
 
-- Complete the Resend template-based email implementation
-- Complete Google OAuth configuration
-- Build authentication UI
-- Establish frontend session handling
-- Establish business onboarding
-- Establish active business context
-- Implement basic authorization
-- Eventually introduce granular permissions
-- Review naming inconsistencies such as `created_at` vs `createdAt`
-- Correct domain enum typo `PAYMENT_RECEIEVED` through a proper migration when appropriate
-- Continue improving centralized error handling
-- Establish testing strategy
-- Establish production observability as the application grows
+- ~~Complete the Resend template-based email implementation~~ — email content now
+  lives in `src/lib/email/templates`; no dashboard configuration is required,
+  and workspace-scoped templates are editable from Settings
+- ~~Build authentication UI~~
+- ~~Establish frontend session handling~~
+- ~~Establish business onboarding~~
+- ~~Establish active business context~~
+- ~~Implement basic authorization~~ — a named permission matrix, enforced in the
+  service layer (stage 2 of section 51)
+- ~~Correct domain enum typo `PAYMENT_RECEIEVED`~~ — renamed in place via
+  `ALTER TYPE ... RENAME VALUE`, preserving existing rows
+- ~~Continue improving centralized error handling~~ — one `withApiHandler`
+  boundary replacing eighteen copies of the same ladder
+- ~~Establish testing strategy~~ — Vitest, with database-backed integration
+  tests for the invariants a mock cannot demonstrate, run in CI
+
+Still open:
+
+- Complete Google OAuth configuration (credentials are not set; the provider is
+  registered only when they are present)
+- Build a shared UI component library, a toast system, and error/loading
+  boundaries; replace the remaining `alert()`/`confirm()` calls
+- Accessibility: form labels, modal focus traps and escape handling
+- Establish production observability — structured logging with request IDs.
+  Audit logs and application logs remain different systems (section 59)
+- Per-transaction currency and an exponent-aware money representation; the
+  minor-unit exponent is currently fixed at 2
+- A trigram index for party search, which today compiles to an unindexable
+  `ILIKE '%term%'`
+- A data-erasure path: financial foreign keys are `RESTRICT`, so a user with
+  ledger history cannot be deleted
 
 These should be handled progressively rather than all at once.
 
@@ -2252,27 +2316,37 @@ Neon PostgreSQL
 
 # 64. Immediate Build Direction
 
-The project should now move from authentication infrastructure into the **user-facing authentication experience**.
+> Updated after the ledger-hardening branch. Steps 1 to 13 of the original
+> sequence are complete, apart from Google OAuth credentials.
 
-The immediate sequence should be:
+The guidance this section originally gave was not to jump into invoices or
+reports before the multi-tenant and security foundation was solid. That
+foundation is now solid in a way it was not when the ledger first shipped:
 
 ```text
-1. Finish Resend template integration
-2. Add Google OAuth
-3. Build registration UI
-4. Build login UI
-5. Build verification UI
-6. Build logout
-7. Build authenticated layout
-8. Build session-aware frontend
-9. Build business onboarding
-10. Create Business + OWNER membership
-11. Establish active business context
-12. Implement authorization foundation
-13. Begin BusinessOS business functionality
+Balances are gross and applied atomically, so concurrent writes cannot be lost
+Authorization is a named matrix enforced in the service layer, not role strings
+  compared in route bodies
+Amounts, query strings and environment are all validated rather than cast
+Errors map through one boundary; internals are never returned to a caller
+The invariants are covered by tests that run against a real database in CI
 ```
 
-We should not jump prematurely into invoices, reports, inventory, or other large modules before the multi-tenant/security foundation is solid.
+The immediate sequence is now:
+
+```text
+1. UI foundation - shared components, toasts, error and loading boundaries,
+   accessibility on forms and modals
+2. Invoices and invoice lines
+3. Payments, allocated against invoices
+4. Gapless per-business invoice numbering
+5. Aging reports
+6. Decide: stay a subsidiary ledger, or introduce a journal and chart of
+   accounts to support statutory financial statements
+```
+
+The same caution still applies further out: inventory, purchasing and employees
+should wait until invoicing and payments have settled in use.
 
 ---
 
