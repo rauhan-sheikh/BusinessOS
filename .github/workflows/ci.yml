@@ -152,6 +152,28 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Check deploy credentials are configured
+        # Fails here with a readable message rather than deep inside the Vercel
+        # CLI. Auto-deploy is off for main (vercel.json), so a missing secret
+        # means nothing ships at all - worth saying plainly.
+        run: |
+          missing=""
+          [ -n "${{ secrets.VERCEL_TOKEN }}" ]      || missing="$missing VERCEL_TOKEN"
+          [ -n "${{ secrets.VERCEL_ORG_ID }}" ]     || missing="$missing VERCEL_ORG_ID"
+          [ -n "${{ secrets.VERCEL_PROJECT_ID }}" ] || missing="$missing VERCEL_PROJECT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::Missing repository secret(s):$missing"
+            echo "Production deploys run from this workflow because vercel.json"
+            echo "disables Vercel's own auto-deploy for main. Until these secrets"
+            echo "exist, nothing is deployed."
+            echo ""
+            echo "Add them at Settings > Secrets and variables > Actions."
+            echo "  VERCEL_TOKEN       Vercel > Account Settings > Tokens"
+            echo "  VERCEL_ORG_ID      orgId in .vercel/repo.json after 'vercel link'"
+            echo "  VERCEL_PROJECT_ID  id in the same file"
+            exit 1
+          fi
+
       - name: Install Vercel CLI
         run: npm install --global vercel@latest
 
