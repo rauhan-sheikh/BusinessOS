@@ -418,8 +418,10 @@ Four repository secrets (GitHub → Settings → Secrets and variables → Actio
 |---|---|
 | `PRODUCTION_DATABASE_URL` | Neon's **direct, non-pooled** connection string. Migrations need a real session, which a pooled connection cannot guarantee — pooled hostnames contain `-pooler`, the direct one does not. |
 | `VERCEL_TOKEN` | Vercel → Account Settings → Tokens |
-| `VERCEL_ORG_ID` | Run `npx vercel link`, then read `.vercel/project.json` |
-| `VERCEL_PROJECT_ID` | Same file |
+| `VERCEL_ORG_ID` | Run `npx vercel link`, then read `orgId` from `.vercel/repo.json` |
+| `VERCEL_PROJECT_ID` | `id` from the same file |
+
+> `vercel link` writes `repo.json` (not `project.json`) when the project is linked through its git remote, and puts both values under `projects[0]`. It also creates `.env.local` holding a `VERCEL_OIDC_TOKEN`; both paths are gitignored.
 
 No GitHub environment is used, deliberately: Vercel's integration manages one named `Production`, and sharing the name would entangle deployment state with migration state.
 
