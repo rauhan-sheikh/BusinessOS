@@ -97,6 +97,13 @@ export const listInvoicesQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(200).default(25),
 });
 
+export const listPaymentsQuerySchema = z.object({
+  kind: z.enum(["SALES", "PURCHASE"]).optional(),
+  partyId: z.string().uuid().optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(25),
+  offset: z.coerce.number().int().min(0).default(0),
+});
+
 export const agingQuerySchema = z.object({
   kind: z.enum(["SALES", "PURCHASE"]).default("SALES"),
   asAt: z.coerce.date().optional(),
@@ -105,3 +112,4 @@ export const agingQuerySchema = z.object({
 export type CreateInvoiceInput = z.infer<typeof createInvoiceSchema>;
 export type RecordPaymentInput = z.infer<typeof recordPaymentSchema>;
 export type ListInvoicesQuery = z.infer<typeof listInvoicesQuerySchema>;
+export type ListPaymentsQuery = z.infer<typeof listPaymentsQuerySchema>;

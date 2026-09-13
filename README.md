@@ -19,12 +19,14 @@
 - [Core Value Proposition](#core-value-proposition)
 - [Key Features](#key-features)
   - [1. Financial Ledger](#1-financial-ledger)
-  - [2. Counterparty (Party) Management & Statements](#2-counterparty-party-management--statements)
-  - [3. Multi-Tenant Workspaces & Permissions](#3-multi-tenant-workspaces--permissions)
-  - [4. Team Invitations & Onboarding](#4-team-invitations--onboarding)
-  - [5. Transactional Email](#5-transactional-email)
-  - [6. Security & Audit Logging](#6-security--audit-logging)
-  - [7. Complete Mobile & Screen Responsiveness](#7-complete-mobile--screen-responsiveness)
+  - [2. Double-Entry Journal & Chart of Accounts](#2-double-entry-journal--chart-of-accounts)
+  - [3. Invoicing, Payments & GST](#3-invoicing-payments--gst)
+  - [4. Counterparty (Party) Management & Statements](#4-counterparty-party-management--statements)
+  - [5. Multi-Tenant Workspaces & Permissions](#5-multi-tenant-workspaces--permissions)
+  - [6. Team Invitations & Onboarding](#6-team-invitations--onboarding)
+  - [7. Transactional Email](#7-transactional-email)
+  - [8. Security & Audit Logging](#8-security--audit-logging)
+  - [9. Complete Mobile & Screen Responsiveness](#9-complete-mobile--screen-responsiveness)
 - [Tech Stack](#tech-stack)
 - [Project Architecture & Directory Structure](#project-architecture--directory-structure)
 - [Database Schema & Data Model](#database-schema--data-model)
@@ -69,14 +71,33 @@
 - **Server-side pagination and filtering** by counterparty, type, date range and keyword.
 - **CSV export** that pages until complete (rather than silently truncating), escapes values that spreadsheets would otherwise evaluate as formulas, and carries a UTF-8 byte order mark for Excel.
 
-### 2. Counterparty (Party) Management & Statements
+### 2. Double-Entry Journal & Chart of Accounts
+
+- **Fourteen system accounts** are seeded per workspace and referenced by `systemKey`, never by code or name — both are user-editable, so keying on them would break the moment someone renames one.
+- **Signed journal lines.** A line's `amountMinor` is positive for a debit and negative for a credit, and every entry must satisfy `SUM(lines) = 0`. `assertPostable()` refuses an unbalanced entry rather than writing half a posting.
+- **Control accounts require a party.** A line against `ACCOUNTS_RECEIVABLE` or `ACCOUNTS_PAYABLE` must name one; a line against any other account must not. This is what keeps the subsidiary ledger reconcilable to the control account.
+- **Reversal, not deletion.** Correcting a posting writes the inverse entry and links the two. Nothing in the journal is edited or removed after the fact.
+- **Rounding is posted, not hidden.** Where a total is rounded to whole units, the difference goes to a rounding account so the entry still balances.
+
+### 3. Invoicing, Payments & GST
+
+- **Per-line tax.** Tax is computed on each line rather than on the invoice subtotal, so an invoice mixing 5% and 18% items is correct. Rates are basis points (18% is `1800`), quantity is thousandths (2.5 units is `2500`), and division rounds half away from zero.
+- **CGST/SGST vs IGST is decided by place of supply**, comparing the counterparty's state code against the supplier's — never by the rate. The same 18% is CGST+SGST within a state and IGST across one.
+- **Gapless per-financial-year numbering.** `INV/2026-27/0001`, allocated inside the issuing transaction via a row-locked sequence. A draft is unnumbered: an abandoned draft must not consume a number that then goes missing, which GST does not permit.
+- **Draft → issue → cancel.** A draft touches nothing. Issuing allocates the number and posts to the books in one transaction. Cancelling reverses the posting but keeps the document and its number, because removing either would leave a gap.
+- **Payment allocation, three ways.** Settle oldest first (FIFO), choose the amounts per invoice, or hold the money on account as an advance. `paidMinor` and invoice status are recalculated from the allocation rows, so they cannot drift from the payments that justify them.
+- **Aging report** bucketed at not-due / 1–30 / 31–60 / 61–90 / over 90 days, expandable per counterparty down to the individual document.
+- **Item catalogue** supplying defaults for lines. An item's description, price and rate are *copied* onto the line, so editing an item later never rewrites an invoice already issued.
+- **The create form previews totals using the same `calculateInvoice` the server posts with**, so what the screen shows cannot drift from what reaches the books.
+
+### 4. Counterparty (Party) Management & Statements
 
 - Centralised directory of customers, vendors and other counterparties, with GSTIN, PAN, address and contact details.
 - Real-time standing per party: amount to collect, amount to pay, or settled.
 - **Paged statements** showing each entry with its business date, author and reversal status, exportable to CSV.
 - Server-side search and filtering with pagination; workspace-wide totals are computed by aggregate, so they remain correct while paging.
 
-### 3. Multi-Tenant Workspaces & Permissions
+### 5. Multi-Tenant Workspaces & Permissions
 
 Users can own or join multiple independent workspaces and switch between them from the top bar.
 
@@ -99,14 +120,14 @@ Authorization is a **named permission matrix** (`src/modules/auth/permissions.ts
 
 Granting and revoking ownership is reserved to `OWNER`, and a workspace always retains at least one owner.
 
-### 4. Team Invitations & Onboarding
+### 6. Team Invitations & Onboarding
 
 - Invitations carry a 32-byte random token and expire after 7 days. The raw token is never returned by the API; callers permitted to invite receive a ready-built invite URL instead.
 - **Existing users** join with one click, after the invited address is matched against their account.
 - **New users** set a password, and their address is marked verified in the same transaction that creates the membership — following a link sent to that address is what proves ownership of it. If membership fails, the part-created account is rolled back.
 - Pending invitations can be copied or revoked.
 
-### 5. Transactional Email
+### 7. Transactional Email
 
 Email content lives in `src/lib/email/templates`, not in a third-party dashboard, so a fresh deployment sends correct mail with no manual setup and the wording is reviewed alongside the code that triggers it.
 
@@ -115,7 +136,7 @@ Email content lives in `src/lib/email/templates`, not in a third-party dashboard
 - **Workspace owners and admins can customise the invitation wording** from Settings → Email Templates, with a sandboxed preview and one-click restore. Overrides render through the same escaping path as the built-ins.
 - Verification and password reset are **platform-scoped and deliberately not tenant-editable**: they are sent with no workspace context and on behalf of every tenant.
 
-### 6. Security & Audit Logging
+### 8. Security & Audit Logging
 
 - **Optimistic routing guard** (`src/proxy.ts`) reads the session cookie only; real authorization happens server-side in the app layout and in every route and service.
 - **Audit log** of privileged actions (`AuditAction` enum) with user, workspace, IP, user-agent and JSON metadata. Entries written inside a transaction commit or roll back with it.
@@ -123,7 +144,7 @@ Email content lives in `src/lib/email/templates`, not in a third-party dashboard
 - Validated environment (`src/lib/env.ts`), `trustedOrigins`, secure cookies in production, Better Auth rate limiting, and Google account linking.
 - The public newsletter endpoint answers identically whether or not an address is known, so it cannot be used to test whether someone has an account.
 
-### 7. Complete Mobile & Screen Responsiveness
+### 9. Complete Mobile & Screen Responsiveness
 
 - Dedicated layouts for mobile (`< 640px`), tablet (`640px–1024px`) and desktop (`> 1024px`).
 - Mobile navigation drawer containing links, workspace switcher and profile actions.
@@ -160,7 +181,10 @@ BusinessOS/
 │   │   ├── (app)/                 # Authenticated application shell
 │   │   │   ├── components/        # AppTopBar, AppFooter
 │   │   │   ├── dashboard/         # Receivable/payable overview & recent ledger
+│   │   │   ├── invoices/          # List, create form & document detail
+│   │   │   ├── payments/          # Payment list & allocation UI
 │   │   │   ├── parties/           # Party directory & per-party statements
+│   │   │   ├── reports/aging/     # Receivables & payables aging
 │   │   │   ├── transactions/      # Ledger, filters & CSV export
 │   │   │   └── settings/          # Profile, team, email templates, audit trail
 │   │   ├── (auth)/                # Sign in, sign up, password reset
@@ -176,16 +200,18 @@ BusinessOS/
 │   │   ├── env.ts                 # Zod-validated server environment
 │   │   └── email/                 # Sender, renderer and template catalogue
 │   ├── modules/                   # Domain modules (schemas / services / repositories)
+│   │   ├── accounting/            # Chart of accounts, journal & posting rules
 │   │   ├── audit/                 # Audit logging
 │   │   ├── auth/                  # Permission matrix & request context
 │   │   ├── businesses/            # Workspaces, members, invitations, email templates
 │   │   ├── emailList/             # Newsletter subscribers
+│   │   ├── invoices/              # Invoice maths, numbering, allocation & aging
 │   │   ├── parties/               # Counterparties & balances
 │   │   └── transactions/          # Ledger engine, entries & reversals
 │   ├── proxy.ts                   # Next.js 16 optimistic routing guard
 │   └── shared/
 │       ├── api/                   # Error boundary, cookies, request metadata
-│       ├── components/            # Logo and brand marks
+│       ├── components/            # Brand marks and the ui/ primitive library
 │       ├── errors/                # AppError
 │       └── utils/                 # Currency, CSV, serialization, rate limiting
 ├── AGENTS.md                      # Mandatory AI agent rules
@@ -213,10 +239,29 @@ erDiagram
     Business ||--o{ AuditLog : "tracks"
     Business ||--o{ Invitation : "issues"
     Business ||--o{ EmailTemplateOverride : "customises"
+    Business ||--o{ LedgerAccount : "chart of accounts"
+    Business ||--o{ JournalEntry : "posts"
+    Business ||--o{ Invoice : "issues"
+    Business ||--o{ Payment : "receives"
+    Business ||--o{ Item : "catalogues"
+    Business ||--o{ NumberSequence : "numbers"
 
     Party ||--o{ Transaction : "incurs"
     Party ||--|| PartyBalance : "has"
+    Party ||--o{ Invoice : "is billed"
+    Party ||--o{ Payment : "settles"
     Transaction |o--o| Transaction : "reverses"
+
+    LedgerAccount ||--o{ JournalLine : "is posted to"
+    JournalEntry ||--o{ JournalLine : "balances to zero"
+    JournalEntry |o--o| JournalEntry : "reverses"
+    JournalEntry |o--|| Invoice : "records"
+    JournalEntry |o--|| Payment : "records"
+
+    Invoice ||--o{ InvoiceLine : "itemises"
+    Invoice ||--o{ PaymentAllocation : "is settled by"
+    Payment ||--o{ PaymentAllocation : "applies to"
+    Item |o--o{ InvoiceLine : "supplies defaults for"
 
     Business {
         string id PK
@@ -380,7 +425,8 @@ Open [http://localhost:3000](http://localhost:3000).
 
 [Vitest](https://vitest.dev/) covers the parts of the system where being wrong is expensive:
 
-- **Unit** — minor-unit parsing and formatting, the ledger effect table, balance replay (including a randomised property test against incremental application), the permission matrix, and CSV escaping.
+- **Unit** — minor-unit parsing and formatting, the ledger effect table, balance replay (including a randomised property test against incremental application), the permission matrix, CSV escaping, invoice arithmetic and GST splitting, financial-year numbering, and payment allocation.
+- **Component** (jsdom, opted into per file with a `// @vitest-environment jsdom` docblock) — that forms are labelled and dialogs are reachable from the keyboard, that the invoice form's on-screen totals equal what `calculateInvoice` produces for the same input, and that each payment allocation mode sends the request it claims to.
 - **Integration** — real database behaviour that cannot be mocked: that concurrent balance updates are not lost, that the unique constraint blocks a double reversal, that the `CHECK` constraint rejects a non-positive amount, that privilege escalation paths are closed, and that snapshots still agree with the ledger.
 
 Integration tests skip themselves when `DATABASE_URL` is unset, so `npm test` runs without a local database. CI provides a Postgres service container so they actually execute.
@@ -458,10 +504,14 @@ Renames are the exception — `ALTER ... RENAME` preserves data but is not backw
 Honest about what is not built yet:
 
 - **Minor-unit exponent is fixed at 2.** Currencies with a different exponent (JPY, KWD) are not supported. Currency also cannot be changed once the ledger has entries, since stored amounts are denominated in it.
-- **Subsidiary ledger, not a general ledger.** There is no chart of accounts and no debit/credit pairing, so a trial balance, P&L or balance sheet cannot be produced from this data. Invoices, payments with allocation, and reporting are the next major module.
+- **No printable invoice.** There is no PDF or print view, so an issued invoice cannot yet be sent to a customer from the app.
+- **No trial balance or P&L screen.** The double-entry data supports them — `accountTotals()` exists — but nothing renders them yet.
+- **Payments can be reversed only through the service layer.** There is no route or UI for it, and `Payment` carries no reversed marker, so a reversed payment would still read as live in the list. Both are needed before the action is exposed.
+- **No item management screen.** The catalogue is readable from the invoice form and writable through the API, but there is no page to add or edit items.
+- **An invoice cannot be edited.** Correcting one means cancelling and re-issuing; there is no credit-note flow yet.
 - **Rate limiting is in-process**, so on serverless it is per-instance rather than global. Adequate against a naive script; not a defence against a distributed attacker.
 - **Party search uses `ILIKE`**, which cannot use an index. A trigram index is needed before the directory grows large.
-- **No shared UI component library yet.** Feedback still uses `alert()`/`confirm()` in places, and there are no `error.tsx` / `loading.tsx` boundaries.
+- **Dropdowns are unpaged.** The invoice and payment forms load up to 200 counterparties and items into `<select>` elements; past that a searchable control is needed.
 - **Users with ledger history cannot be deleted** (foreign keys are `RESTRICT`), so there is no data-erasure path yet.
 
 ---

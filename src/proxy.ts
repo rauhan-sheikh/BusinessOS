@@ -22,6 +22,7 @@ const PROTECTED_PREFIXES = [
   "/parties",
   "/transactions",
   "/invoices",
+  "/payments",
   "/reports",
   "/settings",
 ];
