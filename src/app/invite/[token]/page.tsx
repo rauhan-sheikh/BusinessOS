@@ -50,7 +50,7 @@ export default async function InvitePage(props: {
         </div>
 
         <footer className="text-center text-xs text-slate-600 py-4">
-          &copy; {new Date().getFullYear()} BusinessOS. All rights reserved.
+          &copy; {new Date().getFullYear()} BusinessOS. Open source under the MIT License.
         </footer>
       </div>
     );

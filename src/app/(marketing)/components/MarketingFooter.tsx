@@ -166,7 +166,18 @@ export default function MarketingFooter() {
 
         {/* Bottom Bar */}
         <div className="pt-8 border-t border-slate-800/60 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <p>&copy; {new Date().getFullYear()} BusinessOS. All rights reserved.</p>
+          <p>
+            &copy; {new Date().getFullYear()} BusinessOS. Open source under the{" "}
+            <a
+              href="https://github.com/rauhan-sheikh/BusinessOS/blob/main/LICENSE"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline underline-offset-2 hover:text-slate-400 transition-colors"
+            >
+              MIT License
+            </a>
+            .
+          </p>
           <div className="flex items-center gap-4">
             <span className="flex items-center gap-1.5">
               <span>🌐</span> English (India) &bull; INR (₹)

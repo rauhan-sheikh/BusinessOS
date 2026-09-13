@@ -235,7 +235,9 @@ export default function InviteClient({
 
       {/* Footer */}
       <footer className="relative z-10 mx-auto w-full max-w-7xl py-4 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-        <p>&copy; {new Date().getFullYear()} BusinessOS. All rights reserved.</p>
+        <p>
+          &copy; {new Date().getFullYear()} BusinessOS. Open source under the MIT License.
+        </p>
         <div className="flex items-center gap-4 text-[11px]">
           <Link href="/privacy" className="hover:text-slate-400">
             Privacy Policy
