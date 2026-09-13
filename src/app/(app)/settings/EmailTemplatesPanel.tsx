@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { useToast, useConfirm } from "@/shared/components/ui";
 
 export interface EmailTemplateVariableView {
   name: string;
@@ -36,9 +37,11 @@ export default function EmailTemplatesPanel({
   const [drafts, setDrafts] = useState<Record<string, { subject: string; html: string }>>(() =>
     Object.fromEntries(initialTemplates.map((t) => [t.key, { subject: t.subject, html: t.html }]))
   );
-  const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "saving" | "error">("idle");
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<{ subject: string; html: string } | null>(null);
+  const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
 
   const active = templates.find((t) => t.key === activeKey);
   const draft = drafts[activeKey];
@@ -81,8 +84,8 @@ export default function EmailTemplatesPanel({
             : t
         )
       );
-      setStatus("saved");
-      setTimeout(() => setStatus("idle"), 3000);
+      setStatus("idle");
+      toast.success(`"${active.name}" email saved.`);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Could not save this email.");
       setStatus("error");
@@ -90,7 +93,17 @@ export default function EmailTemplatesPanel({
   };
 
   const handleReset = async () => {
-    if (!confirm(`Restore the default wording for "${active.name}"?`)) return;
+    const confirmed = await confirm({
+      title: "Restore the default wording?",
+      confirmLabel: "Restore default",
+      message: (
+        <>
+          Your customised <span className="font-semibold text-fg">{active.name}</span>{" "}
+          email is discarded and the built-in wording applies again.
+        </>
+      ),
+    });
+    if (!confirmed) return;
 
     setStatus("saving");
     setError("");
@@ -117,6 +130,7 @@ export default function EmailTemplatesPanel({
         [activeKey]: { subject: active.defaultSubject, html: active.defaultHtml },
       }));
       setStatus("idle");
+      toast.success("Default wording restored.");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Could not restore the default.");
       setStatus("error");
@@ -145,6 +159,8 @@ export default function EmailTemplatesPanel({
 
   return (
     <div className="space-y-5">
+      {confirmDialog}
+
       <div className="rounded-2xl bg-slate-900/60 border border-slate-800/80 p-4 sm:p-6 space-y-5">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
@@ -240,11 +256,6 @@ export default function EmailTemplatesPanel({
         {error && (
           <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl">
             {error}
-          </p>
-        )}
-        {status === "saved" && (
-          <p className="text-xs text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl text-center">
-            Email template saved.
           </p>
         )}
 

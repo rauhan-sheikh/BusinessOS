@@ -4,6 +4,7 @@ import { businessService } from "@/modules/businesses/services/business.service"
 import { AppError } from "@/shared/errors/app-error";
 import AppTopBar from "./components/AppTopBar";
 import AppFooter from "./components/AppFooter";
+import { ToastProvider } from "@/shared/components/ui";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   // One resolution for the whole render: the helper is request-memoised, so the
@@ -35,18 +36,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   }));
 
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100 antialiased">
-      <AppTopBar
-        user={user}
-        businessName={activeBusiness.name}
-        activeBusinessId={activeBusiness.id}
-        activeRole={activeRole}
-        memberships={serializedMemberships}
-      />
-      <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
-        {children}
-      </main>
-      <AppFooter businessName={activeBusiness.name} />
-    </div>
+    // Wraps the shell rather than the root layout, so toasts are available to
+    // every authenticated page without loading the provider on marketing pages.
+    <ToastProvider>
+      <div className="min-h-screen flex flex-col bg-canvas text-fg antialiased">
+        <AppTopBar
+          user={user}
+          businessName={activeBusiness.name}
+          activeBusinessId={activeBusiness.id}
+          activeRole={activeRole}
+          memberships={serializedMemberships}
+        />
+        <main className="flex-1 mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8 py-8">
+          {children}
+        </main>
+        <AppFooter businessName={activeBusiness.name} />
+      </div>
+    </ToastProvider>
   );
 }

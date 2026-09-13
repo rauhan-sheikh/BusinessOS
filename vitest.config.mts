@@ -10,7 +10,9 @@ export default defineConfig({
   resolve: { tsconfigPaths: true },
   test: {
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    // Component tests opt into jsdom with a per-file docblock.
+    setupFiles: ["./vitest.setup.ts"],
+    include: ["src/**/*.test.ts", "src/**/*.test.tsx"],
     // Integration tests share one database; running their files in parallel
     // would let one suite's cleanup delete another's fixtures.
     fileParallelism: false,

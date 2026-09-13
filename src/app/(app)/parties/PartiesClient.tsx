@@ -3,6 +3,13 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { formatCurrency, toMajorUnits } from "@/shared/utils/currency";
+import {
+  Modal,
+  Button,
+  InputField,
+  TextareaField,
+  SelectField,
+} from "@/shared/components/ui";
 
 export interface PartyWithBalance {
   id: string;
@@ -386,172 +393,124 @@ export default function PartiesClient({
 
       {/* Add Party Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-6 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h2 className="text-lg font-bold text-slate-100">Add New Party</h2>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 text-lg leading-none"
+        <Modal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          title="Add a party"
+          description="A customer, vendor or other counterparty you transact with."
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsModalOpen(false)} fullWidth>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="create-party-form"
+                isLoading={submitting}
+                loadingLabel="Saving..."
+                fullWidth
               >
-                &times;
-              </button>
+                Create party
+              </Button>
+            </>
+          }
+        >
+          {/* The submit button sits in the modal footer, so it reaches this
+              form by id rather than by being nested inside it. */}
+          <form id="create-party-form" onSubmit={handleCreateParty} className="space-y-4">
+            <InputField
+              label="Party name"
+              required
+              value={form.name}
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              placeholder="e.g. Ramesh Traders or John Doe"
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <InputField
+                label="Phone number"
+                type="tel"
+                value={form.phone}
+                onChange={(e) => setForm({ ...form, phone: e.target.value })}
+                placeholder="+91 98765 43210"
+              />
+              <InputField
+                label="Email address"
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+                placeholder="contact@party.com"
+              />
             </div>
 
-            <form onSubmit={handleCreateParty} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Party Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  placeholder="e.g. Ramesh Traders or John Doe"
-                  className={inputCls}
+            <TextareaField
+              label="Billing address"
+              rows={2}
+              value={form.address}
+              onChange={(e) => setForm({ ...form, address: e.target.value })}
+              placeholder="Street, City, State, PIN"
+              className="resize-none"
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <InputField
+                label="GSTIN"
+                maxLength={15}
+                value={form.gstin}
+                onChange={(e) => setForm({ ...form, gstin: e.target.value.toUpperCase() })}
+                placeholder="22AAAAA0000A1Z5"
+              />
+              <InputField
+                label="PAN"
+                maxLength={10}
+                value={form.pan}
+                onChange={(e) => setForm({ ...form, pan: e.target.value.toUpperCase() })}
+                placeholder="AAAAA0000A"
+              />
+            </div>
+
+            <fieldset className="p-4 rounded-xl bg-canvas border border-line space-y-3">
+              <legend className="px-1 text-xs font-semibold text-fg-muted">
+                Opening balance (optional)
+              </legend>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <InputField
+                  label={`Amount (${currency})`}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={form.openingBalance}
+                  onChange={(e) => setForm({ ...form, openingBalance: e.target.value })}
+                  placeholder="0.00"
+                  hint="Up to two decimal places"
                 />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    placeholder="+91 98765 43210"
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    placeholder="contact@party.com"
-                    className={inputCls}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Billing Address
-                </label>
-                <textarea
-                  rows={2}
-                  value={form.address}
-                  onChange={(e) => setForm({ ...form, address: e.target.value })}
-                  placeholder="Street, City, State, PIN"
-                  className={`${inputCls} resize-none`}
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    GSTIN
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={15}
-                    value={form.gstin}
-                    onChange={(e) => setForm({ ...form, gstin: e.target.value.toUpperCase() })}
-                    placeholder="22AAAAA0000A1Z5"
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    PAN
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={10}
-                    value={form.pan}
-                    onChange={(e) => setForm({ ...form, pan: e.target.value.toUpperCase() })}
-                    placeholder="AAAAA0000A"
-                    className={inputCls}
-                  />
-                </div>
-              </div>
-
-              {/* Opening Balance */}
-              <div className="p-4 rounded-xl bg-slate-950/60 border border-slate-800/80 space-y-3">
-                <p className="text-xs font-semibold text-slate-300">
-                  Opening Balance (Optional)
-                </p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">
-                      Amount ({currency})
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={form.openingBalance}
-                      onChange={(e) => setForm({ ...form, openingBalance: e.target.value })}
-                      placeholder="0.00"
-                      className={inputCls}
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[11px] text-slate-400 mb-1">
-                      Balance Type
-                    </label>
-                    <select
-                      value={form.openingBalanceType}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          openingBalanceType: e.target.value as "RECEIVABLE" | "PAYABLE",
-                        })
-                      }
-                      className={inputCls}
-                    >
-                      <option value="RECEIVABLE">To Collect (Receivable / Customer)</option>
-                      <option value="PAYABLE">To Pay (Payable / Vendor)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {error && (
-                <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
-                  {error}
-                </p>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200"
+                <SelectField
+                  label="Balance type"
+                  value={form.openingBalanceType}
+                  onChange={(e) =>
+                    setForm({
+                      ...form,
+                      openingBalanceType: e.target.value as "RECEIVABLE" | "PAYABLE",
+                    })
+                  }
                 >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50"
-                >
-                  {submitting ? "Saving..." : "Create Party"}
-                </button>
+                  <option value="RECEIVABLE">To collect (receivable / customer)</option>
+                  <option value="PAYABLE">To pay (payable / vendor)</option>
+                </SelectField>
               </div>
-            </form>
-          </div>
-        </div>
+            </fieldset>
+
+            {error && (
+              <p
+                role="alert"
+                className="text-xs text-danger font-medium bg-danger/10 border border-danger/20 p-2.5 rounded-xl text-center"
+              >
+                {error}
+              </p>
+            )}
+          </form>
+        </Modal>
       )}
     </div>
   );
 }
-
-const inputCls =
-  "w-full rounded-xl bg-slate-900 border border-slate-800 px-3.5 py-2.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition";

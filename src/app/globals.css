@@ -1,26 +1,116 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/**
+ * Design tokens.
+ *
+ * The interface is committed to a single dark surface, so these name roles
+ * rather than offering a light/dark pair. Values match the slate/indigo palette
+ * already in use, so tokens and literal utilities can coexist while components
+ * migrate across - a component using bg-surface sits correctly beside one still
+ * using bg-slate-900/60.
+ *
+ * Text tokens are deliberately one step lighter than the literals they replace.
+ * slate-500 on this background measures about 4.0:1 and slate-600 about 2.4:1,
+ * both short of the 4.5:1 needed for body text; the muted and subtle tokens
+ * below clear it.
+ */
+@theme {
+  /* Surfaces, darkest to lightest */
+  --color-canvas: #020617;
+  --color-surface: #0b1120;
+  --color-raised: #0f172a;
+  --color-overlay: #020617cc;
+
+  /* Lines */
+  --color-line: #1e293b;
+  --color-line-strong: #334155;
+
+  /* Text */
+  --color-fg: #f1f5f9;
+  --color-fg-muted: #cbd5e1;
+  --color-fg-subtle: #94a3b8;
+
+  /* Brand */
+  --color-accent: #4f46e5;
+  --color-accent-hover: #6366f1;
+  --color-accent-fg: #ffffff;
+  --color-accent-subtle: #a5b4fc;
+
+  /*
+   * Financial meaning. These were previously re-derived as literal colours in
+   * three separate files, so a change to what "receivable" looks like meant
+   * finding every one of them.
+   */
+  --color-receivable: #34d399;
+  --color-payable: #fbbf24;
+  --color-danger: #fb7185;
+  --color-info: #38bdf8;
+  --color-neutral: #a78bfa;
+
+  /* Typography. next/font sets these variables on <html>. */
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo,
+    Consolas, monospace;
+
+  /* Used by dropdowns, drawers and dialogs. */
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-scale-in: scale-in 150ms ease-out;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
   }
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-canvas);
+  color: var(--color-fg);
+  /*
+   * Geist is loaded by next/font in layout.tsx, which sets --font-geist-sans on
+   * <html>. This previously hardcoded Arial, so the whole application rendered
+   * in Arial and the downloaded font was never used.
+   */
+  font-family: var(--font-sans);
+}
+
+/*
+ * A visible focus ring everywhere the keyboard lands. Several components set
+ * focus:outline-none without providing a replacement, which left focus
+ * invisible; this restores a floor that individual components can override but
+ * not accidentally remove.
+ */
+:focus-visible {
+  outline: 2px solid var(--color-accent-hover);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* Respect a user's reduced-motion preference. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }

@@ -4,6 +4,15 @@ import { useState } from "react";
 import type { BusinessRole } from "@/generated/prisma/client";
 import { PERMISSION, hasPermission } from "@/modules/auth/permissions";
 import EmailTemplatesPanel, { type EmailTemplateView } from "./EmailTemplatesPanel";
+import {
+  useToast,
+  useConfirm,
+  Modal,
+  Button,
+  InputField,
+  SelectField,
+  TextareaField,
+} from "@/shared/components/ui";
 
 export interface BusinessData {
   id: string;
@@ -106,6 +115,8 @@ export default function SettingsClient({
   const [inviteError, setInviteError] = useState("");
   const [createdInviteUrl, setCreatedInviteUrl] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
+  const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
 
   // Audit Logs State
   const [auditLogs] = useState<AuditLogData[]>(initialAuditLogs);
@@ -179,7 +190,19 @@ export default function SettingsClient({
   };
 
   const handleRevokeInvitation = async (invitationId: string, email: string) => {
-    if (!confirm(`Are you sure you want to cancel the invitation for ${email}?`)) return;
+    const confirmed = await confirm({
+      title: "Cancel this invitation?",
+      isDestructive: true,
+      confirmLabel: "Cancel invitation",
+      cancelLabel: "Keep it",
+      message: (
+        <>
+          The link sent to <span className="font-semibold text-fg">{email}</span>{" "}
+          stops working immediately. You can send a new one at any time.
+        </>
+      ),
+    });
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/businesses/invitations/${invitationId}`, {
@@ -192,13 +215,30 @@ export default function SettingsClient({
       }
 
       setInvitations(invitations.filter((i) => i.id !== invitationId));
+      toast.success("Invitation cancelled.");
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to revoke invitation");
+      toast.error(err instanceof Error ? err.message : "Failed to revoke invitation");
     }
   };
 
   const handleRemoveMember = async (membershipId: string, memberEmail: string) => {
-    if (!confirm(`Are you sure you want to remove ${memberEmail} from this workspace?`)) return;
+    const confirmed = await confirm({
+      title: "Remove this member?",
+      isDestructive: true,
+      confirmLabel: "Remove member",
+      message: (
+        <>
+          <p>
+            <span className="font-semibold text-fg">{memberEmail}</span> loses
+            access to this workspace straight away.
+          </p>
+          <p className="mt-2 text-fg-subtle">
+            Entries they recorded are kept, and stay attributed to them.
+          </p>
+        </>
+      ),
+    });
+    if (!confirmed) return;
 
     try {
       const res = await fetch(`/api/businesses/members/${membershipId}`, {
@@ -211,8 +251,9 @@ export default function SettingsClient({
       }
 
       setMembers(members.filter((m) => m.id !== membershipId));
+      toast.success("Member removed.");
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to remove member");
+      toast.error(err instanceof Error ? err.message : "Failed to remove member");
     }
   };
 
@@ -236,6 +277,8 @@ export default function SettingsClient({
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
+
       {/* Header */}
       <div>
         <h1 className="text-2xl font-bold text-slate-100">Settings & Workspace</h1>
@@ -285,162 +328,113 @@ export default function SettingsClient({
 
           <form onSubmit={handleUpdateProfile} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Business Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  disabled={!canEditSettings}
-                  value={profileForm.name}
-                  onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Legal Entity Name
-                </label>
-                <input
-                  type="text"
-                  disabled={!canEditSettings}
-                  value={profileForm.legalName}
-                  onChange={(e) => setProfileForm({ ...profileForm, legalName: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  GSTIN
-                </label>
-                <input
-                  type="text"
-                  maxLength={15}
-                  disabled={!canEditSettings}
-                  value={profileForm.gstin}
-                  onChange={(e) => setProfileForm({ ...profileForm, gstin: e.target.value.toUpperCase() })}
-                  className={inputCls}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  PAN
-                </label>
-                <input
-                  type="text"
-                  maxLength={10}
-                  disabled={!canEditSettings}
-                  value={profileForm.pan}
-                  onChange={(e) => setProfileForm({ ...profileForm, pan: e.target.value.toUpperCase() })}
-                  className={inputCls}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Business Phone
-                </label>
-                <input
-                  type="tel"
-                  disabled={!canEditSettings}
-                  value={profileForm.phone}
-                  onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Official Email
-                </label>
-                <input
-                  type="email"
-                  disabled={!canEditSettings}
-                  value={profileForm.email}
-                  onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                Registered Address
-              </label>
-              <textarea
-                rows={2}
+              <InputField
+                label="Business name"
+                required
                 disabled={!canEditSettings}
-                value={profileForm.address}
-                onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
-                className={`${inputCls} resize-none`}
+                value={profileForm.name}
+                onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+              />
+              <InputField
+                label="Legal entity name"
+                disabled={!canEditSettings}
+                value={profileForm.legalName}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, legalName: e.target.value })
+                }
+              />
+              <InputField
+                label="GSTIN"
+                maxLength={15}
+                disabled={!canEditSettings}
+                value={profileForm.gstin}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, gstin: e.target.value.toUpperCase() })
+                }
+              />
+              <InputField
+                label="PAN"
+                maxLength={10}
+                disabled={!canEditSettings}
+                value={profileForm.pan}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, pan: e.target.value.toUpperCase() })
+                }
+              />
+              <InputField
+                label="Phone number"
+                type="tel"
+                disabled={!canEditSettings}
+                value={profileForm.phone}
+                onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+              />
+              <InputField
+                label="Email address"
+                type="email"
+                disabled={!canEditSettings}
+                value={profileForm.email}
+                onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Base Currency
-                </label>
-                <select
-                  disabled={!canEditSettings}
-                  value={profileForm.currency}
-                  onChange={(e) => setProfileForm({ ...profileForm, currency: e.target.value })}
-                  className={inputCls}
-                >
-                  <option value="INR">INR (₹) &mdash; Indian Rupee</option>
-                  <option value="USD">USD ($) &mdash; US Dollar</option>
-                  <option value="EUR">EUR (€) &mdash; Euro</option>
-                  <option value="GBP">GBP (£) &mdash; British Pound</option>
-                  <option value="AED">AED (د.إ) &mdash; UAE Dirham</option>
-                </select>
-              </div>
+            <TextareaField
+              label="Registered address"
+              rows={2}
+              disabled={!canEditSettings}
+              value={profileForm.address}
+              onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
+              className="resize-none"
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Timezone
-                </label>
-                <select
-                  disabled={!canEditSettings}
-                  value={profileForm.timezone}
-                  onChange={(e) => setProfileForm({ ...profileForm, timezone: e.target.value })}
-                  className={inputCls}
-                >
-                  <option value="Asia/Kolkata">Asia/Kolkata (IST +05:30)</option>
-                  <option value="Asia/Dubai">Asia/Dubai (GST +04:00)</option>
-                  <option value="UTC">UTC (GMT +00:00)</option>
-                  <option value="America/New_York">America/New_York (EST -05:00)</option>
-                </select>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <SelectField
+                label="Currency"
+                disabled={!canEditSettings}
+                value={profileForm.currency}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, currency: e.target.value })
+                }
+                hint="Locked once the ledger has entries, since stored amounts are denominated in it."
+              >
+                <option value="INR">INR (Indian Rupee)</option>
+                <option value="USD">USD (US Dollar)</option>
+                <option value="EUR">EUR (Euro)</option>
+                <option value="GBP">GBP (British Pound)</option>
+                <option value="AED">AED (UAE Dirham)</option>
+              </SelectField>
+              <SelectField
+                label="Timezone"
+                disabled={!canEditSettings}
+                value={profileForm.timezone}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, timezone: e.target.value })
+                }
+              >
+                <option value="Asia/Kolkata">Asia/Kolkata (IST +05:30)</option>
+                <option value="Asia/Dubai">Asia/Dubai (GST +04:00)</option>
+                <option value="UTC">UTC (GMT +00:00)</option>
+                <option value="America/New_York">America/New_York (EST -05:00)</option>
+              </SelectField>
             </div>
 
-            {profileStatus === "success" && (
-              <p className="text-xs text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl text-center">
-                Business profile updated successfully!
-              </p>
-            )}
             {profileStatus === "error" && (
-              <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
+              <p
+                role="alert"
+                className="text-xs text-danger font-medium bg-danger/10 border border-danger/20 p-2.5 rounded-xl text-center"
+              >
                 {profileError}
               </p>
             )}
 
             {canEditSettings && (
               <div className="pt-2 flex justify-end">
-                <button
+                <Button
                   type="submit"
-                  disabled={profileStatus === "saving"}
-                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50"
+                  isLoading={profileStatus === "saving"}
+                  loadingLabel="Saving..."
                 >
-                  {profileStatus === "saving" ? "Saving..." : "Save Changes"}
-                </button>
+                  Save changes
+                </Button>
               </div>
             )}
           </form>
@@ -609,124 +603,126 @@ export default function SettingsClient({
 
           {/* Send Invitation Modal */}
           {isInviteModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-              <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-base font-bold text-slate-100">Invite Workspace Member</h2>
-                  <button
-                    onClick={() => setIsInviteModalOpen(false)}
-                    className="text-slate-400 hover:text-slate-200 text-lg leading-none cursor-pointer"
+            <Modal
+              isOpen={isInviteModalOpen}
+              onClose={() => {
+                setIsInviteModalOpen(false);
+                setCreatedInviteUrl(null);
+              }}
+              title={createdInviteUrl ? "Invitation sent" : "Invite a workspace member"}
+              description={
+                createdInviteUrl
+                  ? undefined
+                  : "They receive an email with a link that expires in 7 days."
+              }
+              footer={
+                createdInviteUrl ? (
+                  <Button
+                    onClick={() => {
+                      setIsInviteModalOpen(false);
+                      setCreatedInviteUrl(null);
+                    }}
+                    fullWidth
                   >
-                    &times;
-                  </button>
-                </div>
-
-                {!createdInviteUrl ? (
-                  <form onSubmit={handleSendInvite} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                        Colleague Email Address *
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={inviteForm.email}
-                        onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
-                        placeholder="colleague@company.com"
-                        className={inputCls}
-                      />
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        An email invitation with an onboarding link will be sent automatically.
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                        Workspace Role *
-                      </label>
-                      <select
-                        value={inviteForm.role}
-                        onChange={(e) =>
-                          setInviteForm({
-                            ...inviteForm,
-                            role: e.target.value as typeof inviteForm.role,
-                          })
-                        }
-                        className={inputCls}
-                      >
-                        <option value="ACCOUNTANT">ACCOUNTANT &mdash; Can manage ledger & parties</option>
-                        <option value="ADMIN">ADMIN &mdash; Can manage ledger, parties & settings</option>
-                        <option value="OWNER">OWNER &mdash; Full administrative ownership</option>
-                      </select>
-                    </div>
-
-                    {inviteError && (
-                      <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
-                        {inviteError}
-                      </p>
-                    )}
-
-                    <div className="flex items-center justify-end gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsInviteModalOpen(false)}
-                        className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={inviteSubmitting}
-                        className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50 cursor-pointer"
-                      >
-                        {inviteSubmitting ? "Sending..." : "Send Invitation"}
-                      </button>
-                    </div>
-                  </form>
+                    Done
+                  </Button>
                 ) : (
-                  <div className="space-y-4">
-                    <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 text-center space-y-1">
-                      <p className="font-bold">Invitation sent successfully!</p>
-                      <p className="text-[11px] text-slate-400">
-                        An email was dispatched to the invitee. You can also share the direct link below.
-                      </p>
-                    </div>
+                  <>
+                    <Button
+                      variant="secondary"
+                      onClick={() => setIsInviteModalOpen(false)}
+                      fullWidth
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      form="invite-member-form"
+                      isLoading={inviteSubmitting}
+                      loadingLabel="Sending..."
+                      fullWidth
+                    >
+                      Send invitation
+                    </Button>
+                  </>
+                )
+              }
+            >
+              {!createdInviteUrl ? (
+                <form id="invite-member-form" onSubmit={handleSendInvite} className="space-y-4">
+                  <InputField
+                    label="Colleague email address"
+                    type="email"
+                    required
+                    value={inviteForm.email}
+                    onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                    placeholder="colleague@company.com"
+                    hint="An invitation email is sent automatically."
+                  />
 
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-medium text-slate-400">
-                        Direct Invitation Link:
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={createdInviteUrl}
-                          className={`${inputCls} font-mono text-[11px]`}
-                        />
-                        <button
-                          onClick={() => handleCopy(createdInviteUrl)}
-                          className="px-3.5 py-2.5 rounded-xl bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-500 transition-all flex-shrink-0 cursor-pointer"
-                        >
-                          {copiedLink ? "Copied!" : "Copy"}
-                        </button>
-                      </div>
-                    </div>
+                  <SelectField
+                    label="Workspace role"
+                    required
+                    value={inviteForm.role}
+                    onChange={(e) =>
+                      setInviteForm({
+                        ...inviteForm,
+                        role: e.target.value as typeof inviteForm.role,
+                      })
+                    }
+                  >
+                    <option value="ACCOUNTANT">Accountant &mdash; record parties and entries</option>
+                    <option value="ADMIN">Admin &mdash; also manage the team and reverse entries</option>
+                    {/* Only an owner may grant ownership; the server enforces
+                        this too, so the option is simply not offered here. */}
+                    {currentUserRole === "OWNER" && (
+                      <option value="OWNER">Owner &mdash; full control, including settings</option>
+                    )}
+                  </SelectField>
 
-                    <div className="pt-2 flex justify-end">
-                      <button
-                        onClick={() => {
-                          setIsInviteModalOpen(false);
-                          setCreatedInviteUrl(null);
-                        }}
-                        className="rounded-xl bg-slate-800 border border-slate-700 px-5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all cursor-pointer"
+                  {inviteError && (
+                    <p
+                      role="alert"
+                      className="text-xs text-danger font-medium bg-danger/10 border border-danger/20 p-2.5 rounded-xl text-center"
+                    >
+                      {inviteError}
+                    </p>
+                  )}
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  <p className="p-3 rounded-xl bg-receivable/10 border border-receivable/20 text-xs text-receivable text-center">
+                    The invitation email has been sent. You can also share the link directly.
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="invite-link"
+                      className="block text-[11px] font-medium text-fg-subtle"
+                    >
+                      Direct invitation link
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="invite-link"
+                        type="text"
+                        readOnly
+                        value={createdInviteUrl}
+                        // min-w-0 so the field can shrink instead of pushing
+                        // the copy button off the edge on a narrow screen.
+                        className="min-w-0 flex-1 rounded-xl bg-canvas border border-line px-3.5 py-2.5 font-mono text-[11px] text-fg"
+                      />
+                      <Button
+                        onClick={() => handleCopy(createdInviteUrl)}
+                        className="shrink-0"
                       >
-                        Done
-                      </button>
+                        {copiedLink ? "Copied" : "Copy"}
+                      </Button>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              )}
+            </Modal>
           )}
         </div>
       )}
@@ -750,12 +746,12 @@ export default function SettingsClient({
             </div>
 
             <div className="w-full sm:w-64">
-              <input
-                type="text"
+              <InputField
+                label="Search the audit trail"
+                type="search"
                 value={auditSearch}
                 onChange={(e) => setAuditSearch(e.target.value)}
                 placeholder="Search audit actions or users..."
-                className={inputCls}
               />
             </div>
           </div>
@@ -809,6 +805,3 @@ export default function SettingsClient({
     </div>
   );
 }
-
-const inputCls =
-  "w-full rounded-xl bg-slate-900 border border-slate-800 px-3.5 py-2.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition disabled:opacity-50";

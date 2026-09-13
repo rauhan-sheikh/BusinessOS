@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Logo from "@/shared/components/Logo";
+import { InputField } from "@/shared/components/ui";
 
 interface InviteClientProps {
   token: string;
@@ -182,34 +183,26 @@ export default function InviteClient({
           {!currentUser && (
             <div className="space-y-4">
               <form onSubmit={handleRegisterAndAccept} className="space-y-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    Your Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Jane Doe"
-                    className={inputCls}
-                  />
-                </div>
+                <InputField
+                  label="Your full name"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Jane Doe"
+                  autoComplete="name"
+                />
 
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1">
-                    Create Password *
-                  </label>
-                  <input
-                    type="password"
-                    required
-                    minLength={8}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder="Min 8 characters"
-                    className={inputCls}
-                  />
-                </div>
+                <InputField
+                  label="Create password"
+                  type="password"
+                  required
+                  minLength={8}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="At least 8 characters"
+                  hint="At least 8 characters."
+                  autoComplete="new-password"
+                />
 
                 {error && (
                   <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
@@ -256,6 +249,3 @@ export default function InviteClient({
     </div>
   );
 }
-
-const inputCls =
-  "w-full rounded-xl bg-slate-950 border border-slate-800 px-3.5 py-2.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition";

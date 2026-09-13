@@ -4,6 +4,15 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { formatCurrency, toMajorUnits } from "@/shared/utils/currency";
 import { exportToCSV } from "@/shared/utils/export-csv";
+import {
+  useToast,
+  useConfirm,
+  Modal,
+  Button,
+  InputField,
+  SelectField,
+  TextareaField,
+} from "@/shared/components/ui";
 
 export interface LedgerTransaction {
   id: string;
@@ -61,6 +70,8 @@ export default function TransactionsClient({
   const [pageSize, setPageSize] = useState(25);
   const [isPending, startTransition] = useTransition();
   const [isExporting, setIsExporting] = useState(false);
+  const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
 
   // Modal State
   const [isModalOpen, setIsModalOpen] = useState(initialOpenModal);
@@ -207,11 +218,35 @@ export default function TransactionsClient({
     }
   };
 
-  const handleReverse = async (txId: string) => {
-    if (!confirm("Are you sure you want to reverse this transaction?")) return;
+  const handleReverse = async (tx: LedgerTransaction) => {
+    // Names the amount and counterparty rather than asking "are you sure?"
+    // about an unnamed row, and says what reversing actually does - the entry
+    // is not deleted, an opposing one is posted.
+    const confirmed = await confirm({
+      title: "Reverse this transaction?",
+      isDestructive: true,
+      confirmLabel: "Reverse transaction",
+      message: (
+        <>
+          <p>
+            This posts an opposing entry for{" "}
+            <span className="font-semibold text-fg">
+              {formatCurrency(tx.amountMinor, currency)}
+            </span>{" "}
+            against{" "}
+            <span className="font-semibold text-fg">{tx.party?.name ?? "this party"}</span>,
+            and updates their balance.
+          </p>
+          <p className="mt-2 text-fg-subtle">
+            The original entry is kept. A transaction can only be reversed once.
+          </p>
+        </>
+      ),
+    });
+    if (!confirmed) return;
 
     try {
-      const res = await fetch(`/api/transactions/${txId}/reverse`, {
+      const res = await fetch(`/api/transactions/${tx.id}/reverse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ reason: "User requested reversal from ledger" }),
@@ -223,9 +258,10 @@ export default function TransactionsClient({
         throw new Error(data.error || "Failed to reverse transaction");
       }
 
+      toast.success("Transaction reversed.");
       fetchFilteredTransactions(page, pageSize);
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to reverse transaction");
+      toast.error(err instanceof Error ? err.message : "Failed to reverse transaction");
     }
   };
 
@@ -310,10 +346,12 @@ export default function TransactionsClient({
       ]);
 
       if (!exported) {
-        alert("No transactions match the current filters to export.");
+        toast.info("No transactions match the current filters to export.");
+      } else {
+        toast.success(`Exported ${records.length} transactions.`);
       }
     } catch (err: unknown) {
-      alert(err instanceof Error ? err.message : "Failed to export CSV");
+      toast.error(err instanceof Error ? err.message : "Failed to export CSV");
     } finally {
       setIsExporting(false);
     }
@@ -325,6 +363,8 @@ export default function TransactionsClient({
 
   return (
     <div className="space-y-6">
+      {confirmDialog}
+
       {/* Header & Actions */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -356,102 +396,91 @@ export default function TransactionsClient({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Search */}
           <div className="lg:col-span-2">
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Search Description / Ref / Party
-            </label>
-            <input
-              type="text"
+            <InputField
+              label="Search description, reference or party"
+              type="search"
               value={search}
               onChange={(e) => handleFilterChange({ search: e.target.value })}
               placeholder="e.g. Reliance, INV-2026, Supplies..."
-              className={inputCls}
             />
           </div>
 
           {/* Type Filter */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Transaction Type
-            </label>
-            <select
+            <SelectField
+              label="Transaction type"
               value={typeFilter}
               onChange={(e) => handleFilterChange({ typeFilter: e.target.value })}
-              className={inputCls}
             >
-              <option value="ALL">All Types</option>
-              <option value="SALE">📦 Sale</option>
-              <option value="PURCHASE">🛒 Purchase</option>
-              <option value="PAYMENT_RECEIVED">💰 Payment Received</option>
-              <option value="PAYMENT_MADE">💳 Payment Made</option>
-              <option value="OPENING_BALANCE">🏦 Opening Balance</option>
-              <option value="ADJUSTMENT">⚙️ Adjustment</option>
-              <option value="REVERSAL">↩️ Reversal</option>
-            </select>
+              <option value="ALL">All types</option>
+              <option value="SALE">Sale</option>
+              <option value="PURCHASE">Purchase</option>
+              <option value="PAYMENT_RECEIVED">Payment received</option>
+              <option value="PAYMENT_MADE">Payment made</option>
+              <option value="OPENING_BALANCE">Opening balance</option>
+              <option value="ADJUSTMENT">Adjustment</option>
+              <option value="REVERSAL">Reversal</option>
+            </SelectField>
           </div>
 
           {/* Party Filter */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Counterparty
-            </label>
-            <select
+            <SelectField
+              label="Counterparty"
               value={partyFilter}
               onChange={(e) => handleFilterChange({ partyFilter: e.target.value })}
-              className={inputCls}
             >
-              <option value="ALL">All Counterparties</option>
+              <option value="ALL">All counterparties</option>
               {parties.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
-            </select>
+            </SelectField>
           </div>
 
           {/* Page Size */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Rows Per Page
-            </label>
-            <select
+            <SelectField
+              label="Rows per page"
               value={pageSize}
               onChange={(e) => handlePageSizeChange(parseInt(e.target.value, 10))}
-              className={inputCls}
             >
               <option value={10}>10 rows</option>
               <option value={25}>25 rows</option>
               <option value={50}>50 rows</option>
               <option value={100}>100 rows</option>
-            </select>
+            </SelectField>
           </div>
         </div>
 
         {/* Date Range Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/60 text-xs">
-          <div className="flex items-center gap-3">
-            <span className="text-slate-400 font-medium">Date Range:</span>
-            <input
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end justify-between gap-3 pt-3 border-t border-line">
+          {/*
+            Two native date inputs are roughly 130px each, so the previous
+            single non-wrapping row squeezed below about 400px. They now sit in
+            a grid that stacks on mobile, and each is labelled rather than
+            sharing one "Date Range:" caption that belonged to neither.
+          */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full sm:w-auto">
+            <InputField
+              label="From date"
               type="date"
               value={startDate}
               onChange={(e) => handleFilterChange({ startDate: e.target.value })}
-              className={`${inputCls} w-auto py-1`}
             />
-            <span className="text-slate-500">to</span>
-            <input
+            <InputField
+              label="To date"
               type="date"
               value={endDate}
               onChange={(e) => handleFilterChange({ endDate: e.target.value })}
-              className={`${inputCls} w-auto py-1`}
             />
           </div>
 
           {(search || typeFilter !== "ALL" || partyFilter !== "ALL" || startDate || endDate) && (
-            <button
-              onClick={handleResetFilters}
-              className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold"
-            >
-              Reset Filters &times;
-            </button>
+            <Button variant="ghost" size="sm" onClick={handleResetFilters}>
+              Reset filters
+            </Button>
           )}
         </div>
       </div>
@@ -579,7 +608,7 @@ export default function TransactionsClient({
                       <td className="py-3.5 px-4 text-right whitespace-nowrap">
                         {!isReversal && (
                           <button
-                            onClick={() => handleReverse(tx.id)}
+                            onClick={() => handleReverse(tx)}
                             className="text-[11px] text-rose-400 hover:text-rose-300 font-medium underline"
                           >
                             Reverse
@@ -628,151 +657,117 @@ export default function TransactionsClient({
 
       {/* Record Transaction Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-100">Record New Transaction</h2>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 text-lg leading-none"
+        <Modal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          title="Record a transaction"
+          description="Posts a ledger entry and updates the counterparty's balance."
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsModalOpen(false)} fullWidth>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="record-transaction-form"
+                isLoading={submitting}
+                loadingLabel="Recording..."
+                fullWidth
               >
-                &times;
-              </button>
-            </div>
+                Record transaction
+              </Button>
+            </>
+          }
+        >
+          <form id="record-transaction-form" onSubmit={handleCreate} className="space-y-4">
+            <SelectField
+              label="Counterparty"
+              required
+              value={form.partyId}
+              onChange={(e) => setForm({ ...form, partyId: e.target.value })}
+            >
+              {parties.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </SelectField>
 
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Counterparty *
-                </label>
-                <select
-                  required
-                  value={form.partyId}
-                  onChange={(e) => setForm({ ...form, partyId: e.target.value })}
-                  className={inputCls}
-                >
-                  {parties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <SelectField
+              label="Transaction type"
+              required
+              value={form.transactionType}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  transactionType: e.target.value as typeof form.transactionType,
+                })
+              }
+            >
+              <option value="SALE">Sale (invoice / to collect)</option>
+              <option value="PAYMENT_RECEIVED">Payment received (reduces receivable)</option>
+              <option value="PURCHASE">Purchase (bill / to pay)</option>
+              <option value="PAYMENT_MADE">Payment made (reduces payable)</option>
+              <option value="ADJUSTMENT">Manual adjustment</option>
+            </SelectField>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Transaction Type *
-                </label>
-                <select
-                  value={form.transactionType}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      transactionType: e.target.value as typeof form.transactionType,
-                    })
-                  }
-                  className={inputCls}
-                >
-                  <option value="SALE">📦 Sale (Invoice / To Collect)</option>
-                  <option value="PAYMENT_RECEIVED">💰 Payment Received (Reduces Receivable)</option>
-                  <option value="PURCHASE">🛒 Purchase (Bill / To Pay)</option>
-                  <option value="PAYMENT_MADE">💳 Payment Made (Reduces Payable)</option>
-                  <option value="ADJUSTMENT">⚙️ Manual Adjustment</option>
-                </select>
-              </div>
+            {form.transactionType === "ADJUSTMENT" && (
+              <SelectField
+                label="Adjustment direction"
+                required
+                hint="Which side of the balance this entry moves."
+                value={form.direction}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    direction: e.target.value as typeof form.direction,
+                  })
+                }
+              >
+                <option value="RECEIVABLE">Add to receivables (to collect)</option>
+                <option value="PAYABLE">Add to payables (to pay)</option>
+              </SelectField>
+            )}
 
-              {form.transactionType === "ADJUSTMENT" && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Adjustment Direction *
-                  </label>
-                  <select
-                    value={form.direction}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        direction: e.target.value as typeof form.direction,
-                      })
-                    }
-                    className={inputCls}
-                  >
-                    <option value="RECEIVABLE">Add to Receivables (To Collect)</option>
-                    <option value="PAYABLE">Add to Payables (To Pay)</option>
-                  </select>
-                </div>
-              )}
+            <InputField
+              label={`Amount (${currency})`}
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              value={form.amount}
+              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              placeholder="0.00"
+              hint="Positive, with up to two decimal places."
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Amount ({currency}) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                  placeholder="0.00"
-                  className={inputCls}
-                />
-              </div>
+            <InputField
+              label="Invoice / reference number"
+              value={form.referenceNumber}
+              onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })}
+              placeholder="e.g. INV-2026-001"
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Invoice / Reference Number
-                </label>
-                <input
-                  type="text"
-                  value={form.referenceNumber}
-                  onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })}
-                  placeholder="e.g. INV-2026-001"
-                  className={inputCls}
-                />
-              </div>
+            <TextareaField
+              label="Notes / description"
+              rows={2}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="Optional memo or transaction note..."
+              className="resize-none"
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Notes / Description
-                </label>
-                <textarea
-                  rows={2}
-                  value={form.notes}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  placeholder="Optional memo or transaction note..."
-                  className={`${inputCls} resize-none`}
-                />
-              </div>
-
-              {error && (
-                <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
-                  {error}
-                </p>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50"
-                >
-                  {submitting ? "Recording..." : "Record Transaction"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            {error && (
+              <p
+                role="alert"
+                className="text-xs text-danger font-medium bg-danger/10 border border-danger/20 p-2.5 rounded-xl text-center"
+              >
+                {error}
+              </p>
+            )}
+          </form>
+        </Modal>
       )}
     </div>
   );
 }
-
-const inputCls =
-  "w-full rounded-xl bg-slate-900 border border-slate-800 px-3.5 py-2.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition";
