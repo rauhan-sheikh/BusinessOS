@@ -211,7 +211,25 @@ jobs:
         # Deliberately not `vercel pull` + `vercel build` + `--prebuilt`:
         # building here would be faster, but pulling requires read access to
         # project settings, which a narrowly-scoped deploy token does not have.
-        run: vercel deploy --prod --yes --token=${{ secrets.VERCEL_TOKEN }}
+        #
+        # The CLI's output is echoed and then repeated as an ::error::
+        # annotation on failure. Step logs need admin rights to download, so a
+        # failed deploy otherwise reports nothing but "exit code 1" to anyone
+        # without them - which is most of the ways you look at a run.
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+        run: |
+          set +e
+          output="$(vercel deploy --prod --yes --token="$VERCEL_TOKEN" 2>&1)"
+          status=$?
+          echo "$output"
+          if [ "$status" -ne 0 ]; then
+            # Collapsed to one line: an annotation is a single line, and the
+            # last part of the output is where the CLI puts the reason.
+            summary="$(printf '%s' "$output" | tail -c 900 | tr -s '[:space:]' ' ')"
+            echo "::error::vercel deploy exited $status: $summary"
+          fi
+          exit "$status"
 
 # Setup this workflow expects:
 #
