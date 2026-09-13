@@ -223,6 +223,9 @@ delete            cancel ──▶ Cancelled
 | **Paid** | Fully settled. |
 | **Cancelled** | Was issued, then reversed out of the books. Number retained. |
 
+Any invoice can be printed at any status &mdash; see
+[Printing it, or saving a PDF](#printing-it-or-saving-a-pdf).
+
 ### Creating one
 
 **Invoices → + New invoice.**
@@ -282,6 +285,37 @@ would leave a hole in the sequence, which GST does not permit.
 **Cancellation is refused while payments are allocated to the invoice.** Reverse or
 reallocate the payment first. Otherwise you would be cancelling a debt that
 somebody has already settled.
+
+### Printing it, or saving a PDF
+
+Open any invoice and choose **Print / PDF**. You get the document as it should
+look on paper: your business on the letterhead, both parties with their GSTIN and
+PAN, every line with its HSN/SAC code, the tax split that applies, the total in
+words, and a signature block.
+
+Then use **Print / Save as PDF**, which opens your browser's own print dialog.
+Choose your printer, or choose *Save as PDF* as the destination to get a file you
+can email.
+
+> **Why not a "Download PDF" button?** Your browser already makes excellent PDFs,
+> and using it means the document you see is exactly the document you send. It
+> also keeps the app from having to run a second, hidden browser on the server
+> just to draw the same page.
+
+A few things worth knowing:
+
+- The page is **A4** with commercial margins, and long invoices break across pages
+  with the column headings repeated.
+- **A draft prints with a warning** across the top of the screen, and carries no
+  number, because an unnumbered draft is not a valid tax invoice. That warning
+  does not print &mdash; but the missing number is visible on the document itself.
+- **A cancelled invoice is stamped** *Cancelled*, so a printed copy cannot be
+  passed off as live.
+- Where something has been paid, the document shows **Paid** and **Balance due**
+  beneath the total.
+- The **amount in words** is generated from the same integer as the figure beside
+  it, so the two cannot disagree. That is the point of the line: a figure is easy
+  to alter, a figure and its written form together are not.
 
 ### Deleting a draft
 
@@ -504,6 +538,10 @@ It probably has no due date. Without one it stays in *Not due*.
 They have paid more than they owe. The surplus is an advance, available against
 their next invoice.
 
+**The printed invoice is missing my GSTIN or address.**
+Those come from the workspace, not the invoice. Fill them in at *Settings →
+Company Information* and print again.
+
 **A button is missing.**
 It is almost certainly your role. Cancelling, reversing and archiving need Admin;
 workspace settings need Owner. Your role is shown in *Settings → Company Information*.
@@ -518,8 +556,6 @@ Use *Forgot password?* to reset.
 
 Stated plainly so you can plan around it:
 
-- **No printable invoice.** There is no PDF or print view, so an issued invoice
-  cannot yet be sent to a customer from inside the app.
 - **No credit notes.** Correcting an issued invoice means cancelling it and issuing
   a new one.
 - **No invoice editing.** Issued documents are fixed by design.

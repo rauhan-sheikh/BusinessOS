@@ -114,3 +114,66 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/*
+ * Printing.
+ *
+ * An invoice is a document before it is a screen, so the print view is a real
+ * A4 sheet rather than a screenshot of the app. The same markup serves both:
+ * `.sheet` is fixed to A4 width so what is on screen is what comes out, and
+ * everything that is only useful on screen - the application chrome, the print
+ * button itself - is removed rather than shrunk.
+ *
+ * Browser print-to-PDF is deliberate. Rendering PDFs server-side would mean
+ * shipping a headless browser into a serverless function for a document the
+ * user's own browser already knows how to produce.
+ */
+@page {
+  size: A4;
+  /* The signature block needs room; 12mm is the usual commercial margin. */
+  margin: 12mm;
+}
+
+.sheet {
+  width: 210mm;
+  max-width: 100%;
+  padding: 14mm;
+  box-sizing: border-box;
+}
+
+@media print {
+  /* Paper is white and ink is expensive; the app's dark theme is neither. */
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  /* The application chrome marks itself with print:hidden; this covers the
+     controls that belong to the print view itself. */
+  .no-print {
+    display: none !important;
+  }
+
+  .sheet {
+    width: auto;
+    padding: 0;
+    box-shadow: none !important;
+  }
+
+  /* Backgrounds in table headers carry meaning here, so keep them. */
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Never split a row, or the totals block, across a page break. */
+  tr,
+  .break-inside-avoid {
+    break-inside: avoid;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+}

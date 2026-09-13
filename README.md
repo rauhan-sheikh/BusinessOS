@@ -94,6 +94,7 @@
 - **Draft → issue → cancel.** A draft touches nothing. Issuing allocates the number and posts to the books in one transaction. Cancelling reverses the posting through the journal's own `reverse()`, so the opposing entry is linked to the original by a unique column — two simultaneous cancellations cannot both post and reverse the books twice. The document and its number are kept, because removing either would leave a gap.
 - **Payment allocation, three ways.** Settle oldest first (FIFO), choose the amounts per invoice, or hold the money on account as an advance. `paidMinor` and invoice status are recalculated from the allocation rows, so they cannot drift from the payments that justify them.
 - **Payment reversal is posted, not deleted.** An opposing journal entry is written, the allocations are removed so every invoice it settled goes back to outstanding, and the payment row is kept and marked with `reversedAt`, who reversed it, why, and which entry undid it. The reversing entry is unique per payment, so the database refuses a second reversal rather than relying on a check-then-act read. A reversed payment can no longer be allocated.
+- **Printable tax invoice.** `/invoices/[id]/print` renders a statutory A4 document — both parties with GSTIN and PAN, HSN/SAC per line, the applicable tax columns, and the total written out in words. Printing is the browser's own print-to-PDF: rendering PDFs server-side would mean shipping a headless browser into a serverless function to produce a document the user's browser already knows how to make.
 - **Aging report** bucketed at not-due / 1–30 / 31–60 / 61–90 / over 90 days, expandable per counterparty down to the individual document.
 - **Item catalogue** supplying defaults for lines. An item's description, price and rate are *copied* onto the line, so editing an item later never rewrites an invoice already issued.
 - **The create form previews totals using the same `calculateInvoice` the server posts with**, so what the screen shows cannot drift from what reaches the books.
@@ -189,7 +190,7 @@ BusinessOS/
 │   │   ├── (app)/                 # Authenticated application shell
 │   │   │   ├── components/        # AppTopBar, AppFooter
 │   │   │   ├── dashboard/         # Receivable/payable overview & recent ledger
-│   │   │   ├── invoices/          # List, create form & document detail
+│   │   │   ├── invoices/          # List, create form, detail & print view
 │   │   │   ├── payments/          # Payment list & allocation UI
 │   │   │   ├── parties/           # Party directory & per-party statements
 │   │   │   ├── reports/aging/     # Receivables & payables aging
@@ -378,6 +379,8 @@ Every route resolves the active workspace server-side from the caller's membersh
 | `POST` | `/api/invoices/[id]/issue` | `INVOICE_ISSUE` | Allocate the number and post to the books, in one transaction. |
 | `POST` | `/api/invoices/[id]/cancel` | `INVOICE_CANCEL` | Reverse the posting, keeping the document and its number. |
 
+The printable document is a page rather than an endpoint: `/invoices/[id]/print`, gated on `INVOICE_VIEW` like the rest.
+
 ### Payments
 
 | Method | Route | Permission | Purpose |
@@ -509,14 +512,14 @@ Open [http://localhost:3000](http://localhost:3000).
 
 [Vitest](https://vitest.dev/) covers the parts of the system where being wrong is expensive:
 
-- **Unit** — minor-unit parsing and formatting, the ledger effect table, balance replay (including a randomised property test against incremental application), the permission matrix, CSV escaping, invoice arithmetic and GST splitting, financial-year numbering, and payment allocation.
-- **Component** (jsdom, opted into per file with a `// @vitest-environment jsdom` docblock) — that forms are labelled and dialogs are reachable from the keyboard, that the invoice form's on-screen totals equal what `calculateInvoice` produces for the same input, and that each payment allocation mode sends the request it claims to.
+- **Unit** — minor-unit parsing and formatting, the ledger effect table, balance replay (including a randomised property test against incremental application), the permission matrix, CSV escaping, invoice arithmetic and GST splitting, financial-year numbering, payment allocation, and amounts written out in the Indian numbering system.
+- **Component** (jsdom, opted into per file with a `// @vitest-environment jsdom` docblock) — that forms are labelled and dialogs are reachable from the keyboard, that the invoice form's on-screen totals equal what `calculateInvoice` produces for the same input, and that each payment allocation mode sends the request it claims to, and that the printed invoice carries what a GST document must: both GSTINs, HSN/SAC codes, and the tax columns matching the place of supply.
 - **Integration** — real database behaviour that cannot be mocked: that concurrent balance updates are not lost, that the unique constraint blocks a double reversal, that the `CHECK` constraint rejects a non-positive amount, that privilege escalation paths are closed, that a reversal rolls back with the transaction that requested it, that two simultaneous invoice cancellations post only one opposing entry, and that snapshots still agree with the ledger.
 
 Both concurrency guarantees were confirmed by temporarily restoring the old code and watching the new tests fail &mdash; a test that has never failed has not been shown to test anything.
 
 ```
-339 tests across 21 files
+367 tests across 23 files
 ```
 
 Integration tests skip themselves when `DATABASE_URL` is unset, so `npm test` runs without a local database. CI provides a Postgres service container so they actually execute.
@@ -533,7 +536,7 @@ Production deploys run **in order, each gated on the last**:
 
 ```
 push to main
-  └─ verify   typecheck, lint, 339 tests, migrate-from-empty, drift check, build
+  └─ verify   typecheck, lint, 367 tests, migrate-from-empty, drift check, build
       └─ migrate   apply pending migrations to Neon
           └─ deploy   build and ship to Vercel
 ```
@@ -614,7 +617,6 @@ Renames are the exception — `ALTER ... RENAME` preserves data but is not backw
 Honest about what is not built yet:
 
 - **Minor-unit exponent is fixed at 2.** Currencies with a different exponent (JPY, KWD) are not supported. Currency also cannot be changed once the ledger has entries, since stored amounts are denominated in it.
-- **No printable invoice.** There is no PDF or print view, so an issued invoice cannot yet be sent to a customer from the app.
 - **No trial balance or P&L screen.** The double-entry data supports them — `accountTotals()` exists — but nothing renders them yet.
 - **No item management screen.** The catalogue is readable from the invoice form and writable through the API, but there is no page to add or edit items.
 - **An invoice cannot be edited.** Correcting one means cancelling and re-issuing; there is no credit-note flow yet.

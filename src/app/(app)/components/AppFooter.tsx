@@ -7,7 +7,7 @@ interface AppFooterProps {
 
 export default function AppFooter({ businessName }: AppFooterProps) {
   return (
-    <footer className="border-t border-slate-800/80 bg-slate-950/80 text-slate-500 text-xs py-6 mt-auto">
+    <footer className="border-t border-slate-800/80 bg-slate-950/80 text-slate-500 text-xs py-6 mt-auto print:hidden">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
         {/* Left: Business Context & Copyright */}
         <div className="flex items-center gap-2.5">

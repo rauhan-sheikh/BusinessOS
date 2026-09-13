@@ -40,7 +40,9 @@ export interface InvoiceDetail {
     id: string;
     name: string;
     gstin: string | null;
+    pan: string | null;
     email: string | null;
+    phone: string | null;
     address: string | null;
   };
   createdBy: { id: string; name: string | null };
@@ -270,6 +272,12 @@ export default function InvoiceDetailClient({
           <Button variant="secondary" onClick={() => router.push("/invoices")}>
             Back
           </Button>
+          <Button
+            variant="secondary"
+            onClick={() => router.push(`/invoices/${invoice.id}/print`)}
+          >
+            Print / PDF
+          </Button>
           {canIssue && invoice.status === "DRAFT" && (
             <Button isLoading={isBusy} onClick={() => void handleIssue()}>
               Issue
@@ -396,6 +404,18 @@ export default function InvoiceDetailClient({
               <div>
                 <dt className="text-fg-subtle">GSTIN</dt>
                 <dd className="text-fg-muted font-mono">{invoice.party.gstin}</dd>
+              </div>
+            )}
+            {invoice.party.pan && (
+              <div>
+                <dt className="text-fg-subtle">PAN</dt>
+                <dd className="text-fg-muted font-mono">{invoice.party.pan}</dd>
+              </div>
+            )}
+            {invoice.party.phone && (
+              <div>
+                <dt className="text-fg-subtle">Phone</dt>
+                <dd className="text-fg-muted">{invoice.party.phone}</dd>
               </div>
             )}
             {invoice.party.email && (

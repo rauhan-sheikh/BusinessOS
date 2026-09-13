@@ -34,7 +34,14 @@ export interface CreateInvoiceParams {
 
 const INVOICE_INCLUDE = {
   lines: { orderBy: { position: "asc" } },
-  party: { select: { id: true, name: true, gstin: true, email: true, address: true } },
+  // Enough for a statutory invoice header: a GST document must name and
+  // address both parties, so the print view needs more than a display name.
+  party: {
+    select: {
+      id: true, name: true, gstin: true, pan: true,
+      email: true, phone: true, address: true,
+    },
+  },
   createdBy: { select: { id: true, name: true } },
   allocations: true,
 } satisfies Prisma.InvoiceInclude;
