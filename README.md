@@ -2,7 +2,7 @@
 
 ![BusinessOS Banner](./public/banner.png)
 
-[![Next.js 16](https://img.shields.io/badge/Next.js-16.2.6-black?style=flat-square&logo=next.js)](https://nextjs.org/)
+[![Next.js 16](https://img.shields.io/badge/Next.js-16.3.5-black?style=flat-square&logo=next.js)](https://nextjs.org/)
 [![React 19](https://img.shields.io/badge/React-19.2.4-blue?style=flat-square&logo=react)](https://react.dev/)
 [![Prisma ORM](https://img.shields.io/badge/Prisma-7.9.1-2D3748?style=flat-square&logo=prisma)](https://www.prisma.io/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?style=flat-square&logo=typescript)](https://www.typescriptlang.org/)
@@ -12,10 +12,15 @@
 
 **BusinessOS** is a multi-tenant financial operating system for Small and Medium Enterprises. It replaces spreadsheets with an auditable ledger: money is stored as 64-bit integer minor units so no arithmetic ever passes through a float, balances are maintained atomically alongside the entries that produce them, and financial history is corrected by reversal rather than edited.
 
+**Live:** https://businessos.rauhansheikh.com
+
+> 📘 **Using BusinessOS rather than building it?** Read the [**User Guide**](USER_GUIDE.md) instead &mdash; how each screen works, and why the app behaves as it does.
+
 ---
 
 ## 📑 Table of Contents
 
+- [User Guide](USER_GUIDE.md) &mdash; for people using the app
 - [Core Value Proposition](#core-value-proposition)
 - [Key Features](#key-features)
   - [1. Financial Ledger](#1-financial-ledger)
@@ -30,6 +35,7 @@
 - [Tech Stack](#tech-stack)
 - [Project Architecture & Directory Structure](#project-architecture--directory-structure)
 - [Database Schema & Data Model](#database-schema--data-model)
+- [API Reference](#api-reference)
 - [Getting Started](#getting-started)
 - [Available Scripts](#available-scripts)
 - [Testing](#testing)
@@ -347,6 +353,82 @@ erDiagram
 
 ---
 
+## API Reference
+
+Every handler is wrapped by `withApiHandler`, so failures share one shape and one vocabulary:
+
+```json
+{ "error": "human readable message", "code": "VALIDATION_ERROR", "issues": [] }
+```
+
+`code` is one of `VALIDATION_ERROR` (400), `UNAUTHORIZED` (401), `FORBIDDEN` (403), `NOT_FOUND` (404), `CONFLICT` (409), `RATE_LIMITED` (429) or `INTERNAL_ERROR` (500). `issues` appears only for Zod validation failures. Prisma's `P2002`, `P2025` and `P2003` are mapped to 409, 404 and 409 rather than surfacing as 500s.
+
+Every route resolves the active workspace server-side from the caller's membership &mdash; never from a client-supplied identifier &mdash; and the listed permission is enforced in the **service layer**, so a server component reaches nothing a request could not.
+
+`BigInt` values are serialised as strings. Amounts are sent as decimal strings (`"1250.50"`) and converted to minor units at the boundary.
+
+### Invoices
+
+| Method | Route | Permission | Purpose |
+|---|---|---|---|
+| `GET` | `/api/invoices` | `INVOICE_VIEW` | List, filtered by `kind`, `status`, `partyId`, `search`; paged with `page` and `limit`. |
+| `POST` | `/api/invoices` | `INVOICE_CREATE` | Create a draft. Unnumbered and unposted. |
+| `GET` | `/api/invoices/[id]` | `INVOICE_VIEW` | One invoice with its lines, party and allocations. |
+| `DELETE` | `/api/invoices/[id]` | `INVOICE_CANCEL` | Delete a draft. Refused once issued. |
+| `POST` | `/api/invoices/[id]/issue` | `INVOICE_ISSUE` | Allocate the number and post to the books, in one transaction. |
+| `POST` | `/api/invoices/[id]/cancel` | `INVOICE_CANCEL` | Reverse the posting, keeping the document and its number. |
+
+### Payments
+
+| Method | Route | Permission | Purpose |
+|---|---|---|---|
+| `GET` | `/api/payments` | `PAYMENT_VIEW` | List, filtered by `kind` and `partyId`; paged with `limit` and `offset`. |
+| `POST` | `/api/payments` | `PAYMENT_RECORD` | Record a payment. Omitting `allocations` settles oldest first; `[]` holds it on account. |
+| `POST` | `/api/payments/[id]/reverse` | `PAYMENT_REVERSE` | Post an opposing entry, free the invoices, and mark the payment reversed. |
+
+### Parties and ledger
+
+| Method | Route | Permission | Purpose |
+|---|---|---|---|
+| `GET` | `/api/parties` | `PARTY_VIEW` | List with search, type filter and pagination. |
+| `POST` | `/api/parties` | `PARTY_CREATE` | Create, optionally with an opening balance. |
+| `GET` | `/api/parties/[id]` | `PARTY_VIEW` | One party with its balance and paged statement. |
+| `PATCH` | `/api/parties/[id]` | `PARTY_UPDATE` | Update details. |
+| `DELETE` | `/api/parties/[id]` | `PARTY_ARCHIVE` | Archive. History is never removed. |
+| `GET` | `/api/transactions` | `TRANSACTION_VIEW` | List with filters, pagination and CSV export. |
+| `POST` | `/api/transactions` | `TRANSACTION_CREATE` | Record an entry. `REVERSAL` is not accepted here. |
+| `POST` | `/api/transactions/[id]/reverse` | `TRANSACTION_REVERSE` | The only way to create a `REVERSAL`. |
+| `GET` | `/api/reports/aging` | `REPORT_VIEW` | Aging by bucket, for `kind` as at `asAt`. |
+
+### Workspace and team
+
+| Method | Route | Permission | Purpose |
+|---|---|---|---|
+| `POST` | `/api/businesses` | &mdash; | Create a workspace. Any signed-in user; the creator becomes its owner. |
+| `PATCH` | `/api/businesses` | `BUSINESS_SETTINGS_UPDATE` | Update workspace settings. Owner only. |
+| `POST` | `/api/businesses/switch` | &mdash; | Set the active workspace cookie, honoured only for a workspace the caller belongs to. |
+| `GET` | `/api/businesses/members` | `MEMBER_VIEW` | List members. |
+| `POST` | `/api/businesses/members` | `MEMBER_ROLE_UPDATE` (+ `MEMBER_GRANT_OWNER` for `OWNER`) | Add a member. |
+| `PATCH` `DELETE` | `/api/businesses/members/[id]` | `MEMBER_ROLE_UPDATE` / `MEMBER_REMOVE` | Change a role, or remove. The last owner cannot be removed or demoted. |
+| `GET` | `/api/businesses/invitations` | `INVITATION_VIEW` | Pending invitations. Tokens are never returned. |
+| `POST` | `/api/businesses/invitations` | `MEMBER_INVITE` | Invite by email. |
+| `DELETE` | `/api/businesses/invitations/[id]` | `MEMBER_INVITE` | Revoke. |
+| `GET` | `/api/businesses/audit` | `AUDIT_VIEW` | The audit trail. |
+| `GET` | `/api/businesses/email-templates` | `EMAIL_TEMPLATE_MANAGE` | List templates and any overrides. |
+| `PUT` `DELETE` `POST` | `/api/businesses/email-templates/[key]` | `EMAIL_TEMPLATE_MANAGE` | Save an override, reset to the built-in default, or render a preview. |
+
+### Public
+
+| Method | Route | Notes |
+|---|---|---|
+| `*` | `/api/auth/[...all]` | Better Auth. Sessions, sign-in, verification, password reset. |
+| `GET` | `/api/invitations/[token]` | Details for an invitation link, for the acceptance page. |
+| `POST` | `/api/invitations/[token]` | Accept, as an already signed-in user. |
+| `POST` | `/api/invitations/[token]/register` | Accept by creating an account at the same time. |
+| `POST` | `/api/emailList` | Newsletter signup. Always answers `202`, so it cannot be used to test whether an address is registered. |
+
+---
+
 ## Getting Started
 
 ### Prerequisites
@@ -429,7 +511,13 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - **Unit** — minor-unit parsing and formatting, the ledger effect table, balance replay (including a randomised property test against incremental application), the permission matrix, CSV escaping, invoice arithmetic and GST splitting, financial-year numbering, and payment allocation.
 - **Component** (jsdom, opted into per file with a `// @vitest-environment jsdom` docblock) — that forms are labelled and dialogs are reachable from the keyboard, that the invoice form's on-screen totals equal what `calculateInvoice` produces for the same input, and that each payment allocation mode sends the request it claims to.
-- **Integration** — real database behaviour that cannot be mocked: that concurrent balance updates are not lost, that the unique constraint blocks a double reversal, that the `CHECK` constraint rejects a non-positive amount, that privilege escalation paths are closed, that a reversal rolls back with the transaction that requested it, and that snapshots still agree with the ledger.
+- **Integration** — real database behaviour that cannot be mocked: that concurrent balance updates are not lost, that the unique constraint blocks a double reversal, that the `CHECK` constraint rejects a non-positive amount, that privilege escalation paths are closed, that a reversal rolls back with the transaction that requested it, that two simultaneous invoice cancellations post only one opposing entry, and that snapshots still agree with the ledger.
+
+Both concurrency guarantees were confirmed by temporarily restoring the old code and watching the new tests fail &mdash; a test that has never failed has not been shown to test anything.
+
+```
+339 tests across 21 files
+```
 
 Integration tests skip themselves when `DATABASE_URL` is unset, so `npm test` runs without a local database. CI provides a Postgres service container so they actually execute.
 
@@ -445,12 +533,14 @@ Production deploys run **in order, each gated on the last**:
 
 ```
 push to main
-  └─ verify   typecheck, lint, 117 tests, migrate-from-empty, drift check, build
+  └─ verify   typecheck, lint, 339 tests, migrate-from-empty, drift check, build
       └─ migrate   apply pending migrations to Neon
           └─ deploy   build and ship to Vercel
 ```
 
 A failed migration stops the deploy, so code is never live against a schema that has not been migrated.
+
+Production is served from **https://businessos.rauhansheikh.com**. The `*.vercel.app` hostname sits behind Vercel Deployment Protection and redirects every path to Vercel's SSO, so verify a deploy against the custom domain.
 
 **Two things had to change to get that ordering.**
 
@@ -480,6 +570,24 @@ MIGRATION_DATABASE_URL="<neon direct url>" npm run db:deploy
 ```
 
 `prisma.config.ts` prefers `MIGRATION_DATABASE_URL` over `DATABASE_URL`, so this works without touching the application's own connection string.
+
+It also **refuses to run `migrate` or `db` commands against a non-local database** outside CI. A remote `MIGRATION_DATABASE_URL` in a local `.env` otherwise redirects every migrate command at production &mdash; including `migrate dev`, which creates and drops a shadow database, and `migrate reset`, which drops everything. To override for a single deliberate command:
+
+```bash
+ALLOW_REMOTE_MIGRATIONS=true npm run db:deploy
+```
+
+Keep `MIGRATION_DATABASE_URL` out of your local `.env`; it belongs in CI secrets, where the workflow sets it for the migrate job alone.
+
+### Two traps this pipeline has already hit
+
+Both are fixed; both are the kind that pass for months and then fail on the one push that matters.
+
+**`prisma migrate status` exits 1 when migrations are pending.** The migrate job used it as a gate, so the job failed precisely when it had work to do, and passed only when it was a no-op. It went unnoticed because production happened to be up to date on every earlier run. The step is informational, so its exit code is now ignored; `db:deploy` is the step that must succeed.
+
+**`prisma.config.ts` is loaded by every Prisma command, `generate` included.** `npm run build` begins with `prisma generate`, so a guard that threw on a remote `DATABASE_URL` killed every production build &mdash; where a remote database is exactly what is expected. The guard now applies only to `migrate` and `db`, the commands that can actually write.
+
+The deploy step captures the Vercel CLI's output and republishes it as an `::error::` annotation on failure. Downloading step logs needs repository admin rights, so without that a failed deploy reports nothing but `exit code 1`.
 
 ### Migration safety
 

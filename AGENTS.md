@@ -14,6 +14,16 @@ Every screen, page, modal, table, navigation bar, header, and footer in this pro
 3. **Forms & Modals**: Modals and form grids must use responsive flex/grid layouts (e.g. `grid-cols-1 sm:grid-cols-2`, full width on mobile, proper padding `p-4 sm:p-6`) and prevent horizontal viewport overflow.
 4. **Toolbars & Filters**: Filter bars and action buttons must wrap cleanly (`flex-col sm:flex-row`, `w-full sm:w-auto`).
 
-# CRITICAL MANDATORY REQUIREMENT: README Synchronization
+# CRITICAL MANDATORY REQUIREMENT: Documentation Synchronization
 
-Whenever any worthwhile changes, new features, schema updates, API routes, or architectural adjustments are made to the codebase, ALWAYS update and keep [`README.md`](file:///c:/Users/Admin/Desktop/Engineering/Projects/BusinessOS/README.md) synchronized and accurate.
+Whenever any worthwhile changes, new features, schema updates, API routes, or architectural adjustments are made to the codebase, ALWAYS update **both** of these in the same change, and keep them accurate:
+
+1. [`README.md`](file:///c:/Users/Admin/Desktop/Engineering/Projects/BusinessOS/README.md) — the engineering reference: architecture, data model, API, deployment, testing, and known limitations.
+2. [`USER_GUIDE.md`](file:///c:/Users/Admin/Desktop/Engineering/Projects/BusinessOS/USER_GUIDE.md) — the task-oriented guide for the person *using* BusinessOS, not building it.
+
+### Rules
+
+- Documentation is part of the deliverable, not follow-up work. A change that alters what a user sees or does is not finished until the guide describes it.
+- When a limitation is fixed, **delete it** from the README's "Known Limitations". A stale claim is worse than no claim: the original audit found the README describing a `src/middleware/` directory and a "cashflow" dashboard that never existed.
+- Keep test counts, route lists and directory trees current when they change.
+- The user guide explains *how to do a thing and why it behaves that way*; the README explains *how it is built*. Do not duplicate one inside the other &mdash; link instead.
