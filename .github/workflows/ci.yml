@@ -118,7 +118,13 @@ jobs:
       - name: Show pending migrations
         env:
           MIGRATION_DATABASE_URL: ${{ secrets.PRODUCTION_DATABASE_URL }}
-        run: npx prisma migrate status
+        # `prisma migrate status` exits 1 when migrations are pending, which is
+        # exactly the state this job exists to resolve - so as a gate it fails
+        # whenever there is anything to deploy, and passes only when the job is
+        # a no-op. It is here for the log, so the exit code is ignored; the
+        # `db:deploy` step below is the one that must succeed, and a genuine
+        # connection failure surfaces there with its real error.
+        run: npx prisma migrate status || true
 
       - name: Apply migrations
         env:
