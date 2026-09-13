@@ -627,4 +627,4 @@ Honest about what is not built yet:
 
 ## License
 
-Licensed under the [MIT License](LICENSE).
+Licensed under the [MIT License](LICENSE) &mdash; Copyright &copy; 2026 Rauhan Sheikh.
