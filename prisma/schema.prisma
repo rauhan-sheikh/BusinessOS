@@ -51,6 +51,50 @@ enum AuditAction {
   BALANCE_RECOMPUTED
 }
 
+/// The five classes of account in double-entry bookkeeping. Determines whether a
+/// debit increases or decreases the account, and which statement it belongs to.
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+/// Accounts the application itself posts to. Every business gets one of each on
+/// creation, and they cannot be deleted or retyped, because the posting rules
+/// reference them by key rather than by code or name - which a user may change.
+enum LedgerAccountKey {
+  ACCOUNTS_RECEIVABLE
+  ACCOUNTS_PAYABLE
+  CASH
+  SALES
+  PURCHASES
+  GST_OUTPUT_CGST
+  GST_OUTPUT_SGST
+  GST_OUTPUT_IGST
+  GST_INPUT_CGST
+  GST_INPUT_SGST
+  GST_INPUT_IGST
+  OPENING_BALANCE_EQUITY
+  ROUNDING
+  ADJUSTMENTS
+}
+
+/// What produced a journal entry. Kept so an entry can be traced back to the
+/// document it came from, and so documents can find their postings.
+enum JournalSourceType {
+  INVOICE
+  BILL
+  PAYMENT
+  CREDIT_NOTE
+  OPENING_BALANCE
+  ADJUSTMENT
+  MANUAL
+  /// Entries created by migrating the pre-journal Transaction ledger.
+  LEGACY_TRANSACTION
+}
+
 enum InvitationStatus {
   PENDING
   ACCEPTED
@@ -78,6 +122,7 @@ model User {
   transactions          Transaction[]
   invitationsSent       Invitation[]
   emailTemplatesUpdated EmailTemplateOverride[]
+  journalEntries        JournalEntry[]
 
   @@map("user")
 }
@@ -101,6 +146,8 @@ model Business {
   auditLogs      AuditLog[]
   invitations    Invitation[]
   emailTemplates EmailTemplateOverride[]
+  ledgerAccounts LedgerAccount[]
+  journalEntries JournalEntry[]
 }
 
 model BusinessUser {
@@ -133,6 +180,7 @@ model Party {
   updatedAt    DateTime      @updatedAt
   business     Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
   transactions Transaction[]
+  journalLines JournalLine[]
   balance      PartyBalance?
 
   @@index([businessId])
@@ -185,6 +233,91 @@ model Transaction {
   @@index([businessId, transactionType, transactionDate(sort: Desc)])
   @@index([partyId])
   @@index([createdById])
+}
+
+/// A single account in a business's chart of accounts.
+///
+/// Named LedgerAccount rather than Account because Better Auth already owns the
+/// `account` table for OAuth and credential records.
+model LedgerAccount {
+  id          String            @id @default(uuid())
+  businessId  String
+  /// Display code, e.g. "1100". Editable, so never referenced by posting rules.
+  code        String
+  name        String
+  type        LedgerAccountType
+  /// Set on the accounts the application posts to itself. Null for accounts a
+  /// user adds. Unique per business, so there is exactly one of each.
+  systemKey   LedgerAccountKey?
+  /// Sub-ledger accounts carry a party on their journal lines, so a control
+  /// account balance can be broken down per counterparty.
+  isControl   Boolean           @default(false)
+  description String?
+  isArchived  Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  lines    JournalLine[]
+
+  @@unique([businessId, code])
+  @@unique([businessId, systemKey])
+  @@index([businessId, type])
+}
+
+/// One balanced accounting event. Its lines always sum to zero.
+model JournalEntry {
+  id         String   @id @default(uuid())
+  businessId String
+  /// Business date of the event. May be back-dated; createdAt never moves.
+  entryDate  DateTime
+  narration  String?
+
+  sourceType JournalSourceType
+  /// Id of the document that produced this entry, when there is one.
+  sourceId   String?
+
+  /// Set only on a reversing entry. Unique, so an entry is reversed at most
+  /// once - enforced by the database rather than by a check-then-act read.
+  reversedEntryId String?       @unique
+  reversedEntry   JournalEntry? @relation("JournalReversal", fields: [reversedEntryId], references: [id], onDelete: Restrict)
+  reversal        JournalEntry? @relation("JournalReversal")
+
+  createdById String
+  createdAt   DateTime @default(now())
+
+  business  Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdBy User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  lines     JournalLine[]
+
+  @@index([businessId, entryDate(sort: Desc)])
+  @@index([businessId, sourceType, sourceId])
+  @@index([createdById])
+}
+
+/// One side of a journal entry.
+///
+/// amountMinor is signed: positive is a debit, negative is a credit. A single
+/// signed column gives one invariant to enforce - the lines of an entry sum to
+/// zero - rather than two columns that can both be populated, or neither.
+/// Debit and credit are derived for display.
+model JournalLine {
+  id             String  @id @default(uuid())
+  journalEntryId String
+  accountId      String
+  amountMinor    BigInt
+  /// Set on lines against a control account, so receivable and payable can be
+  /// broken down per counterparty without a separate sub-ledger.
+  partyId        String?
+  description    String?
+
+  journalEntry JournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  party        Party?        @relation(fields: [partyId], references: [id], onDelete: Restrict)
+
+  @@index([journalEntryId])
+  @@index([accountId])
+  @@index([partyId])
 }
 
 model AuditLog {
