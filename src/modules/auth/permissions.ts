@@ -38,6 +38,23 @@ export const PERMISSION = {
   EMAIL_TEMPLATE_MANAGE: "EMAIL_TEMPLATE_MANAGE",
 
   AUDIT_VIEW: "AUDIT_VIEW",
+
+  INVOICE_VIEW: "INVOICE_VIEW",
+  INVOICE_CREATE: "INVOICE_CREATE",
+  /** Issuing allocates a number and posts to the books. */
+  INVOICE_ISSUE: "INVOICE_ISSUE",
+  /** Cancelling reverses a posting, so it sits with reversal, not creation. */
+  INVOICE_CANCEL: "INVOICE_CANCEL",
+
+  PAYMENT_VIEW: "PAYMENT_VIEW",
+  PAYMENT_RECORD: "PAYMENT_RECORD",
+  PAYMENT_REVERSE: "PAYMENT_REVERSE",
+
+  ITEM_VIEW: "ITEM_VIEW",
+  ITEM_MANAGE: "ITEM_MANAGE",
+
+  /** Aging, trial balance and the journal view. */
+  REPORT_VIEW: "REPORT_VIEW",
 } as const;
 
 export type Permission = (typeof PERMISSION)[keyof typeof PERMISSION];
@@ -53,6 +70,14 @@ const BOOKKEEPING: readonly Permission[] = [
   PERMISSION.TRANSACTION_CREATE,
   PERMISSION.MEMBER_VIEW,
   PERMISSION.BUSINESS_SETTINGS_VIEW,
+  // An accountant's day-to-day work is exactly this.
+  PERMISSION.INVOICE_VIEW,
+  PERMISSION.INVOICE_CREATE,
+  PERMISSION.INVOICE_ISSUE,
+  PERMISSION.PAYMENT_VIEW,
+  PERMISSION.PAYMENT_RECORD,
+  PERMISSION.ITEM_VIEW,
+  PERMISSION.REPORT_VIEW,
 ];
 
 /**
@@ -70,6 +95,11 @@ const ADMINISTRATION: readonly Permission[] = [
   PERMISSION.AUDIT_VIEW,
   // Whoever sends the invitations can word them.
   PERMISSION.EMAIL_TEMPLATE_MANAGE,
+  // Cancelling and reversing undo postings, so they sit with the other
+  // correction-of-record actions rather than with everyday entry.
+  PERMISSION.INVOICE_CANCEL,
+  PERMISSION.PAYMENT_REVERSE,
+  PERMISSION.ITEM_MANAGE,
 ];
 
 /**

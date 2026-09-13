@@ -24,8 +24,10 @@ type AppTopBarProps = {
 
 const NAV_ITEMS = [
   { label: "Dashboard", href: "/dashboard" },
+  { label: "Invoices", href: "/invoices" },
   { label: "Parties", href: "/parties" },
   { label: "Ledger", href: "/transactions" },
+  { label: "Aging", href: "/reports/aging" },
   { label: "Settings", href: "/settings" },
 ];
 

@@ -21,6 +21,8 @@ const PROTECTED_PREFIXES = [
   "/onboarding",
   "/parties",
   "/transactions",
+  "/invoices",
+  "/reports",
   "/settings",
 ];
 
