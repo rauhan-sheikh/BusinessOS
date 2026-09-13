@@ -11,6 +11,7 @@ import {
   Button,
   InputField,
   SelectField,
+  TextareaField,
 } from "@/shared/components/ui";
 
 export interface BusinessData {
@@ -327,162 +328,113 @@ export default function SettingsClient({
 
           <form onSubmit={handleUpdateProfile} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Business Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  disabled={!canEditSettings}
-                  value={profileForm.name}
-                  onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Legal Entity Name
-                </label>
-                <input
-                  type="text"
-                  disabled={!canEditSettings}
-                  value={profileForm.legalName}
-                  onChange={(e) => setProfileForm({ ...profileForm, legalName: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  GSTIN
-                </label>
-                <input
-                  type="text"
-                  maxLength={15}
-                  disabled={!canEditSettings}
-                  value={profileForm.gstin}
-                  onChange={(e) => setProfileForm({ ...profileForm, gstin: e.target.value.toUpperCase() })}
-                  className={inputCls}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  PAN
-                </label>
-                <input
-                  type="text"
-                  maxLength={10}
-                  disabled={!canEditSettings}
-                  value={profileForm.pan}
-                  onChange={(e) => setProfileForm({ ...profileForm, pan: e.target.value.toUpperCase() })}
-                  className={inputCls}
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Business Phone
-                </label>
-                <input
-                  type="tel"
-                  disabled={!canEditSettings}
-                  value={profileForm.phone}
-                  onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Official Email
-                </label>
-                <input
-                  type="email"
-                  disabled={!canEditSettings}
-                  value={profileForm.email}
-                  onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                Registered Address
-              </label>
-              <textarea
-                rows={2}
+              <InputField
+                label="Business name"
+                required
                 disabled={!canEditSettings}
-                value={profileForm.address}
-                onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
-                className={`${inputCls} resize-none`}
+                value={profileForm.name}
+                onChange={(e) => setProfileForm({ ...profileForm, name: e.target.value })}
+              />
+              <InputField
+                label="Legal entity name"
+                disabled={!canEditSettings}
+                value={profileForm.legalName}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, legalName: e.target.value })
+                }
+              />
+              <InputField
+                label="GSTIN"
+                maxLength={15}
+                disabled={!canEditSettings}
+                value={profileForm.gstin}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, gstin: e.target.value.toUpperCase() })
+                }
+              />
+              <InputField
+                label="PAN"
+                maxLength={10}
+                disabled={!canEditSettings}
+                value={profileForm.pan}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, pan: e.target.value.toUpperCase() })
+                }
+              />
+              <InputField
+                label="Phone number"
+                type="tel"
+                disabled={!canEditSettings}
+                value={profileForm.phone}
+                onChange={(e) => setProfileForm({ ...profileForm, phone: e.target.value })}
+              />
+              <InputField
+                label="Email address"
+                type="email"
+                disabled={!canEditSettings}
+                value={profileForm.email}
+                onChange={(e) => setProfileForm({ ...profileForm, email: e.target.value })}
               />
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Base Currency
-                </label>
-                <select
-                  disabled={!canEditSettings}
-                  value={profileForm.currency}
-                  onChange={(e) => setProfileForm({ ...profileForm, currency: e.target.value })}
-                  className={inputCls}
-                >
-                  <option value="INR">INR (₹) &mdash; Indian Rupee</option>
-                  <option value="USD">USD ($) &mdash; US Dollar</option>
-                  <option value="EUR">EUR (€) &mdash; Euro</option>
-                  <option value="GBP">GBP (£) &mdash; British Pound</option>
-                  <option value="AED">AED (د.إ) &mdash; UAE Dirham</option>
-                </select>
-              </div>
+            <TextareaField
+              label="Registered address"
+              rows={2}
+              disabled={!canEditSettings}
+              value={profileForm.address}
+              onChange={(e) => setProfileForm({ ...profileForm, address: e.target.value })}
+              className="resize-none"
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Timezone
-                </label>
-                <select
-                  disabled={!canEditSettings}
-                  value={profileForm.timezone}
-                  onChange={(e) => setProfileForm({ ...profileForm, timezone: e.target.value })}
-                  className={inputCls}
-                >
-                  <option value="Asia/Kolkata">Asia/Kolkata (IST +05:30)</option>
-                  <option value="Asia/Dubai">Asia/Dubai (GST +04:00)</option>
-                  <option value="UTC">UTC (GMT +00:00)</option>
-                  <option value="America/New_York">America/New_York (EST -05:00)</option>
-                </select>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <SelectField
+                label="Currency"
+                disabled={!canEditSettings}
+                value={profileForm.currency}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, currency: e.target.value })
+                }
+                hint="Locked once the ledger has entries, since stored amounts are denominated in it."
+              >
+                <option value="INR">INR (Indian Rupee)</option>
+                <option value="USD">USD (US Dollar)</option>
+                <option value="EUR">EUR (Euro)</option>
+                <option value="GBP">GBP (British Pound)</option>
+                <option value="AED">AED (UAE Dirham)</option>
+              </SelectField>
+              <SelectField
+                label="Timezone"
+                disabled={!canEditSettings}
+                value={profileForm.timezone}
+                onChange={(e) =>
+                  setProfileForm({ ...profileForm, timezone: e.target.value })
+                }
+              >
+                <option value="Asia/Kolkata">Asia/Kolkata (IST +05:30)</option>
+                <option value="Asia/Dubai">Asia/Dubai (GST +04:00)</option>
+                <option value="UTC">UTC (GMT +00:00)</option>
+                <option value="America/New_York">America/New_York (EST -05:00)</option>
+              </SelectField>
             </div>
 
-            {profileStatus === "success" && (
-              <p className="text-xs text-emerald-400 font-medium bg-emerald-500/10 border border-emerald-500/20 p-2.5 rounded-xl text-center">
-                Business profile updated successfully!
-              </p>
-            )}
             {profileStatus === "error" && (
-              <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
+              <p
+                role="alert"
+                className="text-xs text-danger font-medium bg-danger/10 border border-danger/20 p-2.5 rounded-xl text-center"
+              >
                 {profileError}
               </p>
             )}
 
             {canEditSettings && (
               <div className="pt-2 flex justify-end">
-                <button
+                <Button
                   type="submit"
-                  disabled={profileStatus === "saving"}
-                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50"
+                  isLoading={profileStatus === "saving"}
+                  loadingLabel="Saving..."
                 >
-                  {profileStatus === "saving" ? "Saving..." : "Save Changes"}
-                </button>
+                  Save changes
+                </Button>
               </div>
             )}
           </form>
@@ -794,12 +746,12 @@ export default function SettingsClient({
             </div>
 
             <div className="w-full sm:w-64">
-              <input
-                type="text"
+              <InputField
+                label="Search the audit trail"
+                type="search"
                 value={auditSearch}
                 onChange={(e) => setAuditSearch(e.target.value)}
                 placeholder="Search audit actions or users..."
-                className={inputCls}
               />
             </div>
           </div>
@@ -853,6 +805,3 @@ export default function SettingsClient({
     </div>
   );
 }
-
-const inputCls =
-  "w-full rounded-xl bg-slate-900 border border-slate-800 px-3.5 py-2.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition disabled:opacity-50";

@@ -396,102 +396,91 @@ export default function TransactionsClient({
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Search */}
           <div className="lg:col-span-2">
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Search Description / Ref / Party
-            </label>
-            <input
-              type="text"
+            <InputField
+              label="Search description, reference or party"
+              type="search"
               value={search}
               onChange={(e) => handleFilterChange({ search: e.target.value })}
               placeholder="e.g. Reliance, INV-2026, Supplies..."
-              className={inputCls}
             />
           </div>
 
           {/* Type Filter */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Transaction Type
-            </label>
-            <select
+            <SelectField
+              label="Transaction type"
               value={typeFilter}
               onChange={(e) => handleFilterChange({ typeFilter: e.target.value })}
-              className={inputCls}
             >
-              <option value="ALL">All Types</option>
-              <option value="SALE">📦 Sale</option>
-              <option value="PURCHASE">🛒 Purchase</option>
-              <option value="PAYMENT_RECEIVED">💰 Payment Received</option>
-              <option value="PAYMENT_MADE">💳 Payment Made</option>
-              <option value="OPENING_BALANCE">🏦 Opening Balance</option>
-              <option value="ADJUSTMENT">⚙️ Adjustment</option>
-              <option value="REVERSAL">↩️ Reversal</option>
-            </select>
+              <option value="ALL">All types</option>
+              <option value="SALE">Sale</option>
+              <option value="PURCHASE">Purchase</option>
+              <option value="PAYMENT_RECEIVED">Payment received</option>
+              <option value="PAYMENT_MADE">Payment made</option>
+              <option value="OPENING_BALANCE">Opening balance</option>
+              <option value="ADJUSTMENT">Adjustment</option>
+              <option value="REVERSAL">Reversal</option>
+            </SelectField>
           </div>
 
           {/* Party Filter */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Counterparty
-            </label>
-            <select
+            <SelectField
+              label="Counterparty"
               value={partyFilter}
               onChange={(e) => handleFilterChange({ partyFilter: e.target.value })}
-              className={inputCls}
             >
-              <option value="ALL">All Counterparties</option>
+              <option value="ALL">All counterparties</option>
               {parties.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
-            </select>
+            </SelectField>
           </div>
 
           {/* Page Size */}
           <div>
-            <label className="block text-[11px] font-medium text-slate-400 mb-1">
-              Rows Per Page
-            </label>
-            <select
+            <SelectField
+              label="Rows per page"
               value={pageSize}
               onChange={(e) => handlePageSizeChange(parseInt(e.target.value, 10))}
-              className={inputCls}
             >
               <option value={10}>10 rows</option>
               <option value={25}>25 rows</option>
               <option value={50}>50 rows</option>
               <option value={100}>100 rows</option>
-            </select>
+            </SelectField>
           </div>
         </div>
 
         {/* Date Range Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 border-t border-slate-800/60 text-xs">
-          <div className="flex items-center gap-3">
-            <span className="text-slate-400 font-medium">Date Range:</span>
-            <input
+        <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-end justify-between gap-3 pt-3 border-t border-line">
+          {/*
+            Two native date inputs are roughly 130px each, so the previous
+            single non-wrapping row squeezed below about 400px. They now sit in
+            a grid that stacks on mobile, and each is labelled rather than
+            sharing one "Date Range:" caption that belonged to neither.
+          */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full sm:w-auto">
+            <InputField
+              label="From date"
               type="date"
               value={startDate}
               onChange={(e) => handleFilterChange({ startDate: e.target.value })}
-              className={`${inputCls} w-auto py-1`}
             />
-            <span className="text-slate-500">to</span>
-            <input
+            <InputField
+              label="To date"
               type="date"
               value={endDate}
               onChange={(e) => handleFilterChange({ endDate: e.target.value })}
-              className={`${inputCls} w-auto py-1`}
             />
           </div>
 
           {(search || typeFilter !== "ALL" || partyFilter !== "ALL" || startDate || endDate) && (
-            <button
-              onClick={handleResetFilters}
-              className="text-xs text-indigo-400 hover:text-indigo-300 font-semibold"
-            >
-              Reset Filters &times;
-            </button>
+            <Button variant="ghost" size="sm" onClick={handleResetFilters}>
+              Reset filters
+            </Button>
           )}
         </div>
       </div>
@@ -782,6 +771,3 @@ export default function TransactionsClient({
     </div>
   );
 }
-
-const inputCls =
-  "w-full rounded-xl bg-slate-900 border border-slate-800 px-3.5 py-2.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition";
