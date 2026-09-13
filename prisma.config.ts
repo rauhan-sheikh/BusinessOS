@@ -25,12 +25,32 @@ function isLocalHost(hostname: string): boolean {
   );
 }
 
+/**
+ * Whether the command being run can change a database.
+ *
+ * This config is loaded by every Prisma CLI command, `generate` included, and
+ * `generate` is the first half of `npm run build`. Throwing for every command
+ * therefore broke production builds, where DATABASE_URL is legitimately remote
+ * and nothing migrates: the build ran `prisma generate`, the guard fired, and
+ * the deploy failed with a message about migrations it was never going to run.
+ *
+ * Only `migrate` and `db` reach the database destructively, so only those are
+ * guarded. Reading argv is crude, but the alternative - refusing to resolve a
+ * url the safe commands need - is what caused the problem.
+ */
+function isSchemaWritingCommand(): boolean {
+  return process.argv.some((arg) => arg === "migrate" || arg === "db");
+}
+
 function resolveMigrationUrl(): string | undefined {
   const url = process.env.MIGRATION_DATABASE_URL || process.env.DATABASE_URL;
   if (!url) return undefined;
 
-  // CI is the intended place for this, and sets CI=true.
-  if (process.env.CI === "true") return url;
+  if (!isSchemaWritingCommand()) return url;
+
+  // CI is the intended place for this. GitHub Actions sets CI=true; other
+  // runners set other truthy values, so anything non-empty counts.
+  if (process.env.CI) return url;
   if (process.env.ALLOW_REMOTE_MIGRATIONS === "true") return url;
 
   let hostname: string;
