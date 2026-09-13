@@ -49,6 +49,86 @@ enum AuditAction {
   TRANSACTION_RECORDED
   TRANSACTION_REVERSED
   BALANCE_RECOMPUTED
+  INVOICE_DRAFTED
+  INVOICE_ISSUED
+  INVOICE_CANCELLED
+  INVOICE_DRAFT_DELETED
+  PAYMENT_RECORDED
+  PAYMENT_REALLOCATED
+  PAYMENT_REVERSED
+  ITEM_CREATED
+  ITEM_UPDATED
+  ITEM_ARCHIVED
+}
+
+/// The five classes of account in double-entry bookkeeping. Determines whether a
+/// debit increases or decreases the account, and which statement it belongs to.
+/// Whether a document is money owed to the business or by it. A sales invoice
+/// posts to receivable; a purchase bill posts to payable.
+enum InvoiceKind {
+  SALES
+  PURCHASE
+}
+
+enum InvoiceStatus {
+  /// Editable, unnumbered, and not yet in the books.
+  DRAFT
+  /// Numbered and posted to the journal. No longer editable.
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  /// Reversed out of the books after issue. Kept, never deleted.
+  CANCELLED
+}
+
+/// How a supply is taxed, decided by comparing the place of supply with the
+/// supplier's own state - never by the rate.
+enum GstTreatment {
+  INTRA_STATE
+  INTER_STATE
+  EXEMPT
+}
+
+enum LedgerAccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+/// Accounts the application itself posts to. Every business gets one of each on
+/// creation, and they cannot be deleted or retyped, because the posting rules
+/// reference them by key rather than by code or name - which a user may change.
+enum LedgerAccountKey {
+  ACCOUNTS_RECEIVABLE
+  ACCOUNTS_PAYABLE
+  CASH
+  SALES
+  PURCHASES
+  GST_OUTPUT_CGST
+  GST_OUTPUT_SGST
+  GST_OUTPUT_IGST
+  GST_INPUT_CGST
+  GST_INPUT_SGST
+  GST_INPUT_IGST
+  OPENING_BALANCE_EQUITY
+  ROUNDING
+  ADJUSTMENTS
+}
+
+/// What produced a journal entry. Kept so an entry can be traced back to the
+/// document it came from, and so documents can find their postings.
+enum JournalSourceType {
+  INVOICE
+  BILL
+  PAYMENT
+  CREDIT_NOTE
+  OPENING_BALANCE
+  ADJUSTMENT
+  MANUAL
+  /// Entries created by migrating the pre-journal Transaction ledger.
+  LEGACY_TRANSACTION
 }
 
 enum InvitationStatus {
@@ -78,29 +158,39 @@ model User {
   transactions          Transaction[]
   invitationsSent       Invitation[]
   emailTemplatesUpdated EmailTemplateOverride[]
+  journalEntries        JournalEntry[]
+  invoices              Invoice[]
+  payments              Payment[]               @relation("PaymentCreatedBy")
+  paymentsReversed      Payment[]               @relation("PaymentReversedBy")
 
   @@map("user")
 }
 
 model Business {
-  id             String                  @id @default(uuid())
-  name           String
-  legalName      String?
-  gstin          String?
-  pan            String?
-  phone          String?
-  email          String?
-  address        String?
-  currency       String                  @default("INR")
-  timezone       String                  @default("Asia/Kolkata")
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
-  users          BusinessUser[]
-  parties        Party[]
-  transactions   Transaction[]
-  auditLogs      AuditLog[]
-  invitations    Invitation[]
-  emailTemplates EmailTemplateOverride[]
+  id              String                  @id @default(uuid())
+  name            String
+  legalName       String?
+  gstin           String?
+  pan             String?
+  phone           String?
+  email           String?
+  address         String?
+  currency        String                  @default("INR")
+  timezone        String                  @default("Asia/Kolkata")
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  users           BusinessUser[]
+  parties         Party[]
+  transactions    Transaction[]
+  auditLogs       AuditLog[]
+  invitations     Invitation[]
+  emailTemplates  EmailTemplateOverride[]
+  ledgerAccounts  LedgerAccount[]
+  journalEntries  JournalEntry[]
+  numberSequences NumberSequence[]
+  invoices        Invoice[]
+  items           Item[]
+  payments        Payment[]
 }
 
 model BusinessUser {
@@ -133,6 +223,9 @@ model Party {
   updatedAt    DateTime      @updatedAt
   business     Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
   transactions Transaction[]
+  journalLines JournalLine[]
+  invoices     Invoice[]
+  payments     Payment[]
   balance      PartyBalance?
 
   @@index([businessId])
@@ -185,6 +278,302 @@ model Transaction {
   @@index([businessId, transactionType, transactionDate(sort: Desc)])
   @@index([partyId])
   @@index([createdById])
+}
+
+/// A single account in a business's chart of accounts.
+///
+/// Named LedgerAccount rather than Account because Better Auth already owns the
+/// `account` table for OAuth and credential records.
+model LedgerAccount {
+  id          String            @id @default(uuid())
+  businessId  String
+  /// Display code, e.g. "1100". Editable, so never referenced by posting rules.
+  code        String
+  name        String
+  type        LedgerAccountType
+  /// Set on the accounts the application posts to itself. Null for accounts a
+  /// user adds. Unique per business, so there is exactly one of each.
+  systemKey   LedgerAccountKey?
+  /// Sub-ledger accounts carry a party on their journal lines, so a control
+  /// account balance can be broken down per counterparty.
+  isControl   Boolean           @default(false)
+  description String?
+  isArchived  Boolean           @default(false)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  lines    JournalLine[]
+
+  @@unique([businessId, code])
+  @@unique([businessId, systemKey])
+  @@index([businessId, type])
+}
+
+/// One balanced accounting event. Its lines always sum to zero.
+model JournalEntry {
+  id         String   @id @default(uuid())
+  businessId String
+  /// Business date of the event. May be back-dated; createdAt never moves.
+  entryDate  DateTime
+  narration  String?
+
+  sourceType JournalSourceType
+  /// Id of the document that produced this entry, when there is one.
+  sourceId   String?
+
+  /// Set only on a reversing entry. Unique, so an entry is reversed at most
+  /// once - enforced by the database rather than by a check-then-act read.
+  reversedEntryId String?       @unique
+  reversedEntry   JournalEntry? @relation("JournalReversal", fields: [reversedEntryId], references: [id], onDelete: Restrict)
+  reversal        JournalEntry? @relation("JournalReversal")
+
+  createdById String
+  createdAt   DateTime @default(now())
+
+  business  Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdBy User          @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  lines     JournalLine[]
+
+  @@index([businessId, entryDate(sort: Desc)])
+  @@index([businessId, sourceType, sourceId])
+  @@index([createdById])
+}
+
+/// One side of a journal entry.
+///
+/// amountMinor is signed: positive is a debit, negative is a credit. A single
+/// signed column gives one invariant to enforce - the lines of an entry sum to
+/// zero - rather than two columns that can both be populated, or neither.
+/// Debit and credit are derived for display.
+model JournalLine {
+  id             String  @id @default(uuid())
+  journalEntryId String
+  accountId      String
+  amountMinor    BigInt
+  /// Set on lines against a control account, so receivable and payable can be
+  /// broken down per counterparty without a separate sub-ledger.
+  partyId        String?
+  description    String?
+
+  journalEntry JournalEntry  @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+  account      LedgerAccount @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  party        Party?        @relation(fields: [partyId], references: [id], onDelete: Restrict)
+
+  @@index([journalEntryId])
+  @@index([accountId])
+  @@index([partyId])
+}
+
+/// Gapless counter for a numbered document.
+///
+/// GST requires invoice numbers to be consecutive with no gaps, so the number
+/// is allocated by incrementing this row inside the same transaction that
+/// creates the invoice: if that transaction rolls back, the number is released
+/// rather than burnt.
+model NumberSequence {
+  id            String   @id @default(uuid())
+  businessId    String
+  /// e.g. "SALES_INVOICE". A string rather than an enum so a new document type
+  /// does not need a migration.
+  documentType  String
+  /// Indian financial year the sequence belongs to, as "2026-27".
+  financialYear String
+  prefix        String
+  /// The next number to hand out.
+  nextValue     Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+
+  @@unique([businessId, documentType, financialYear])
+}
+
+model Invoice {
+  id         String        @id @default(uuid())
+  businessId String
+  partyId    String
+  kind       InvoiceKind
+  status     InvoiceStatus @default(DRAFT)
+
+  /// Allocated on issue, never while a draft - an abandoned draft must not
+  /// consume a number that then goes missing from the sequence.
+  number        String?
+  financialYear String?
+  sequence      Int?
+
+  issueDate DateTime
+  dueDate   DateTime?
+
+  /// State code of the place of supply. Compared with the business's own state
+  /// to decide between CGST/SGST and IGST.
+  placeOfSupply String?
+  gstTreatment  GstTreatment @default(INTRA_STATE)
+
+  /// Totals in minor units, stored so a historical document always shows what
+  /// it showed when issued, even if a tax rate later changes.
+  subtotalMinor BigInt @default(0)
+  discountMinor BigInt @default(0)
+  cgstMinor     BigInt @default(0)
+  sgstMinor     BigInt @default(0)
+  igstMinor     BigInt @default(0)
+  /// Difference between the computed and the presented total.
+  roundingMinor BigInt @default(0)
+  totalMinor    BigInt @default(0)
+  /// Sum of payments allocated to this invoice.
+  paidMinor     BigInt @default(0)
+
+  notes String?
+  terms String?
+
+  /// The posting this document produced. Null while a draft.
+  journalEntryId String? @unique
+
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  business    Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  party       Party               @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  createdBy   User                @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  lines       InvoiceLine[]
+  allocations PaymentAllocation[]
+
+  @@unique([businessId, number])
+  @@index([businessId, status, issueDate(sort: Desc)])
+  @@index([businessId, partyId, issueDate(sort: Desc)])
+  @@index([businessId, kind, status])
+  @@index([partyId])
+  @@index([createdById])
+}
+
+model InvoiceLine {
+  id        String @id @default(uuid())
+  invoiceId String
+  /// Order on the printed document.
+  position  Int
+
+  /// Optional link to the catalogue. The description and price are copied onto
+  /// the line, so editing an item never rewrites history on issued invoices.
+  itemId      String?
+  description String
+  /// HSN for goods, SAC for services. Required on GST invoices above a
+  /// turnover threshold, so it is captured but not enforced here.
+  hsnSacCode  String?
+
+  /// Quantity in thousandths, keeping the integer-only money rule: GST permits
+  /// up to three decimal places.
+  quantityMilli  BigInt  @default(1000)
+  unitOfMeasure  String?
+  unitPriceMinor BigInt
+  discountMinor  BigInt  @default(0)
+
+  /// Tax rate in basis points, so 18% is 1800 and no rate is fractional.
+  taxRateBps Int @default(0)
+
+  /// Computed and stored, so a line always shows the arithmetic it was issued
+  /// with.
+  lineSubtotalMinor BigInt @default(0)
+  cgstMinor         BigInt @default(0)
+  sgstMinor         BigInt @default(0)
+  igstMinor         BigInt @default(0)
+  lineTotalMinor    BigInt @default(0)
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item    Item?   @relation(fields: [itemId], references: [id], onDelete: Restrict)
+
+  @@index([invoiceId])
+  @@index([itemId])
+}
+
+/// A reusable product or service, to save retyping on every invoice.
+model Item {
+  id             String   @id @default(uuid())
+  businessId     String
+  name           String
+  description    String?
+  hsnSacCode     String?
+  unitOfMeasure  String?
+  /// Default, copied onto a line and editable there.
+  unitPriceMinor BigInt   @default(0)
+  taxRateBps     Int      @default(0)
+  isArchived     Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  business Business      @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  lines    InvoiceLine[]
+
+  @@unique([businessId, name])
+  @@index([businessId, isArchived])
+}
+
+/// Money received or paid, as a document.
+model Payment {
+  id          String      @id @default(uuid())
+  businessId  String
+  partyId     String
+  /// SALES means received from a customer; PURCHASE means paid to a supplier.
+  kind        InvoiceKind
+  amountMinor BigInt
+  paymentDate DateTime
+  method      String?
+  reference   String?
+  notes       String?
+
+  journalEntryId String? @unique
+
+  /// Set when the payment has been reversed.
+  ///
+  /// The row is kept: the money did arrive and was then taken back, and
+  /// deleting it would erase that. Reversal removes the allocations, so
+  /// without this marker a reversed payment is indistinguishable in a list
+  /// from one deliberately held on account.
+  reversedAt     DateTime?
+  reversedById   String?
+  reversalReason String?
+
+  /// The reversing journal entry. Unique, so the database refuses a second
+  /// reversal of the same payment rather than relying on a check-then-act read.
+  reversalEntryId String? @unique
+
+  createdById String
+  createdAt   DateTime @default(now())
+
+  business    Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  party       Party               @relation(fields: [partyId], references: [id], onDelete: Restrict)
+  createdBy   User                @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  /// Restrict, like every other actor link on a financial record: who reversed
+  /// a payment must not disappear when the account is deleted.
+  reversedBy  User?               @relation("PaymentReversedBy", fields: [reversedById], references: [id], onDelete: Restrict)
+  allocations PaymentAllocation[]
+
+  @@index([businessId, paymentDate(sort: Desc)])
+  @@index([businessId, partyId])
+  @@index([partyId])
+  @@index([createdById])
+  @@index([reversedById])
+}
+
+/// How much of a payment settles which invoice.
+///
+/// Without this a payment can only reduce a running balance, and no invoice can
+/// be called paid or overdue - which is what an aging report is made of.
+model PaymentAllocation {
+  id          String   @id @default(uuid())
+  paymentId   String
+  invoiceId   String
+  amountMinor BigInt
+  createdAt   DateTime @default(now())
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Restrict)
+
+  /// One row per payment and invoice pair; change the amount rather than
+  /// adding a second.
+  @@unique([paymentId, invoiceId])
+  @@index([invoiceId])
 }
 
 model AuditLog {
