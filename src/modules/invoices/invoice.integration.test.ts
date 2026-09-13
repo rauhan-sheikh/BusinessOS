@@ -283,6 +283,62 @@ describe.skipIf(!hasDatabase)("invoicing (database)", () => {
       expect(after.receivableMinor).toBe(before.receivableMinor);
     });
 
+    it("links the reversing entry to the original", async () => {
+      const invoice = await invoiceRepository.issue(
+        (await draft()).id,
+        businessId,
+        userId
+      );
+      await invoiceRepository.cancel(invoice.id, businessId, userId);
+
+      // The link is not decoration: reversedEntryId is unique, and it is the
+      // only thing standing between this and a second cancellation posting a
+      // second opposing entry.
+      const reversal = await prisma.journalEntry.findFirstOrThrow({
+        where: { businessId, reversedEntryId: invoice.journalEntryId },
+      });
+      expect(reversal.sourceId).toBe(invoice.id);
+    });
+
+    it("posts one opposing entry even when two cancellations race", async () => {
+      const invoice = await invoiceRepository.issue(
+        (await draft()).id,
+        businessId,
+        userId
+      );
+
+      // The status check in cancel() is check-then-act: both callers can read
+      // ISSUED before either commits. Before this went through the journal's
+      // reverse(), both then posted an inverse entry and the books came out
+      // reversed twice.
+      const results = await Promise.allSettled([
+        invoiceRepository.cancel(invoice.id, businessId, userId, "first"),
+        invoiceRepository.cancel(invoice.id, businessId, userId, "second"),
+      ]);
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+
+      const reversals = await prisma.journalEntry.count({
+        where: { businessId, reversedEntryId: invoice.journalEntryId },
+      });
+      expect(reversals).toBe(1);
+
+      // Original plus exactly one reversal, netting to nothing.
+      const entries = await prisma.journalEntry.findMany({
+        where: { businessId, sourceId: invoice.id },
+        include: { lines: true },
+      });
+      expect(entries).toHaveLength(2);
+      expect(
+        entries.flatMap((e) => e.lines).reduce((t, l) => t + l.amountMinor, 0n)
+      ).toBe(0n);
+
+      const cancelled = await prisma.invoice.findUniqueOrThrow({
+        where: { id: invoice.id },
+      });
+      expect(cancelled.status).toBe("CANCELLED");
+    });
+
     it("refuses to delete an issued invoice", async () => {
       const invoice = await invoiceRepository.issue(
         (await draft()).id,

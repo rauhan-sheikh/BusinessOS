@@ -3,7 +3,6 @@ import type { Prisma, InvoiceKind, InvoiceStatus } from "@/generated/prisma/clie
 import { AppError } from "@/shared/errors/app-error";
 import { journalRepository } from "@/modules/accounting/repositories/journal.repository";
 import { postInvoice, postBill } from "@/modules/accounting/postings";
-import { invertLines } from "@/modules/accounting/journal";
 import {
   calculateInvoice,
   resolveGstTreatment,
@@ -245,6 +244,9 @@ export const invoiceRepository = {
       });
 
       if (!invoice) throw new AppError("Invoice not found", 404);
+      // Advisory only. The real guard against two concurrent cancellations is
+      // the unique constraint journalRepository.reverse relies on below, which
+      // a status read cannot provide - it is check-then-act.
       if (invoice.status === "CANCELLED") {
         throw new AppError("This invoice is already cancelled.", 409);
       }
@@ -262,32 +264,25 @@ export const invoiceRepository = {
       }
 
       if (invoice.journalEntryId) {
-        const original = await tx.journalEntry.findUniqueOrThrow({
-          where: { id: invoice.journalEntryId },
-          include: { lines: { include: { account: true } } },
-        });
-
-        const lines = invertLines(
-          original.lines.map((line) => ({
-            accountKey: line.account.systemKey!,
-            amountMinor: line.amountMinor,
-            partyId: line.partyId,
-            description: line.description,
-          }))
-        );
-
-        await journalRepository.post(
-          {
-            businessId,
-            createdById: actorUserId,
-            entryDate: new Date(),
-            sourceType: "CREDIT_NOTE",
-            sourceId: invoice.id,
-            narration: reason
-              ? `Cancellation of ${invoice.number}: ${reason}`
-              : `Cancellation of ${invoice.number}`,
-            lines,
-          },
+        // Reverses through the journal's own primitive rather than inverting
+        // the lines here. That link is what makes a second cancellation
+        // impossible: reverse() writes reversedEntryId, which is unique, so
+        // two concurrent callers cannot both post an opposing entry and
+        // double-reverse the books. Inverting by hand skipped that link
+        // entirely, and its non-null assertion on systemKey would have thrown
+        // a TypeError on a custom account where reverse() reports a 400.
+        //
+        // The entry keeps the original's source type rather than being
+        // labelled CREDIT_NOTE: no credit note exists here. A credit note is a
+        // separate GST document with its own number series, and marking a
+        // cancellation as one would make any future listing of them wrong.
+        await journalRepository.reverse(
+          invoice.journalEntryId,
+          businessId,
+          actorUserId,
+          reason
+            ? `Cancellation of ${invoice.number}: ${reason}`
+            : `Cancellation of ${invoice.number}`,
           tx
         );
       }
