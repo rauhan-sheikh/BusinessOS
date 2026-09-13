@@ -4,7 +4,15 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { formatCurrency, toMajorUnits } from "@/shared/utils/currency";
 import { exportToCSV } from "@/shared/utils/export-csv";
-import { useToast, useConfirm } from "@/shared/components/ui";
+import {
+  useToast,
+  useConfirm,
+  Modal,
+  Button,
+  InputField,
+  SelectField,
+  TextareaField,
+} from "@/shared/components/ui";
 
 export interface LedgerTransaction {
   id: string;
@@ -660,147 +668,116 @@ export default function TransactionsClient({
 
       {/* Record Transaction Modal */}
       {isModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-100">Record New Transaction</h2>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 text-lg leading-none"
+        <Modal
+          isOpen={isModalOpen}
+          onClose={() => setIsModalOpen(false)}
+          title="Record a transaction"
+          description="Posts a ledger entry and updates the counterparty's balance."
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsModalOpen(false)} fullWidth>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="record-transaction-form"
+                isLoading={submitting}
+                loadingLabel="Recording..."
+                fullWidth
               >
-                &times;
-              </button>
-            </div>
+                Record transaction
+              </Button>
+            </>
+          }
+        >
+          <form id="record-transaction-form" onSubmit={handleCreate} className="space-y-4">
+            <SelectField
+              label="Counterparty"
+              required
+              value={form.partyId}
+              onChange={(e) => setForm({ ...form, partyId: e.target.value })}
+            >
+              {parties.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </SelectField>
 
-            <form onSubmit={handleCreate} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Counterparty *
-                </label>
-                <select
-                  required
-                  value={form.partyId}
-                  onChange={(e) => setForm({ ...form, partyId: e.target.value })}
-                  className={inputCls}
-                >
-                  {parties.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
+            <SelectField
+              label="Transaction type"
+              required
+              value={form.transactionType}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  transactionType: e.target.value as typeof form.transactionType,
+                })
+              }
+            >
+              <option value="SALE">Sale (invoice / to collect)</option>
+              <option value="PAYMENT_RECEIVED">Payment received (reduces receivable)</option>
+              <option value="PURCHASE">Purchase (bill / to pay)</option>
+              <option value="PAYMENT_MADE">Payment made (reduces payable)</option>
+              <option value="ADJUSTMENT">Manual adjustment</option>
+            </SelectField>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Transaction Type *
-                </label>
-                <select
-                  value={form.transactionType}
-                  onChange={(e) =>
-                    setForm({
-                      ...form,
-                      transactionType: e.target.value as typeof form.transactionType,
-                    })
-                  }
-                  className={inputCls}
-                >
-                  <option value="SALE">📦 Sale (Invoice / To Collect)</option>
-                  <option value="PAYMENT_RECEIVED">💰 Payment Received (Reduces Receivable)</option>
-                  <option value="PURCHASE">🛒 Purchase (Bill / To Pay)</option>
-                  <option value="PAYMENT_MADE">💳 Payment Made (Reduces Payable)</option>
-                  <option value="ADJUSTMENT">⚙️ Manual Adjustment</option>
-                </select>
-              </div>
+            {form.transactionType === "ADJUSTMENT" && (
+              <SelectField
+                label="Adjustment direction"
+                required
+                hint="Which side of the balance this entry moves."
+                value={form.direction}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    direction: e.target.value as typeof form.direction,
+                  })
+                }
+              >
+                <option value="RECEIVABLE">Add to receivables (to collect)</option>
+                <option value="PAYABLE">Add to payables (to pay)</option>
+              </SelectField>
+            )}
 
-              {form.transactionType === "ADJUSTMENT" && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Adjustment Direction *
-                  </label>
-                  <select
-                    value={form.direction}
-                    onChange={(e) =>
-                      setForm({
-                        ...form,
-                        direction: e.target.value as typeof form.direction,
-                      })
-                    }
-                    className={inputCls}
-                  >
-                    <option value="RECEIVABLE">Add to Receivables (To Collect)</option>
-                    <option value="PAYABLE">Add to Payables (To Pay)</option>
-                  </select>
-                </div>
-              )}
+            <InputField
+              label={`Amount (${currency})`}
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              value={form.amount}
+              onChange={(e) => setForm({ ...form, amount: e.target.value })}
+              placeholder="0.00"
+              hint="Positive, with up to two decimal places."
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Amount ({currency}) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  value={form.amount}
-                  onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                  placeholder="0.00"
-                  className={inputCls}
-                />
-              </div>
+            <InputField
+              label="Invoice / reference number"
+              value={form.referenceNumber}
+              onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })}
+              placeholder="e.g. INV-2026-001"
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Invoice / Reference Number
-                </label>
-                <input
-                  type="text"
-                  value={form.referenceNumber}
-                  onChange={(e) => setForm({ ...form, referenceNumber: e.target.value })}
-                  placeholder="e.g. INV-2026-001"
-                  className={inputCls}
-                />
-              </div>
+            <TextareaField
+              label="Notes / description"
+              rows={2}
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="Optional memo or transaction note..."
+              className="resize-none"
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Notes / Description
-                </label>
-                <textarea
-                  rows={2}
-                  value={form.notes}
-                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  placeholder="Optional memo or transaction note..."
-                  className={`${inputCls} resize-none`}
-                />
-              </div>
-
-              {error && (
-                <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
-                  {error}
-                </p>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50"
-                >
-                  {submitting ? "Recording..." : "Record Transaction"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            {error && (
+              <p
+                role="alert"
+                className="text-xs text-danger font-medium bg-danger/10 border border-danger/20 p-2.5 rounded-xl text-center"
+              >
+                {error}
+              </p>
+            )}
+          </form>
+        </Modal>
       )}
     </div>
   );

@@ -4,7 +4,14 @@ import { useState } from "react";
 import type { BusinessRole } from "@/generated/prisma/client";
 import { PERMISSION, hasPermission } from "@/modules/auth/permissions";
 import EmailTemplatesPanel, { type EmailTemplateView } from "./EmailTemplatesPanel";
-import { useToast, useConfirm } from "@/shared/components/ui";
+import {
+  useToast,
+  useConfirm,
+  Modal,
+  Button,
+  InputField,
+  SelectField,
+} from "@/shared/components/ui";
 
 export interface BusinessData {
   id: string;
@@ -644,124 +651,126 @@ export default function SettingsClient({
 
           {/* Send Invitation Modal */}
           {isInviteModalOpen && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-              <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-5">
-                <div className="flex items-center justify-between">
-                  <h2 className="text-base font-bold text-slate-100">Invite Workspace Member</h2>
-                  <button
-                    onClick={() => setIsInviteModalOpen(false)}
-                    className="text-slate-400 hover:text-slate-200 text-lg leading-none cursor-pointer"
+            <Modal
+              isOpen={isInviteModalOpen}
+              onClose={() => {
+                setIsInviteModalOpen(false);
+                setCreatedInviteUrl(null);
+              }}
+              title={createdInviteUrl ? "Invitation sent" : "Invite a workspace member"}
+              description={
+                createdInviteUrl
+                  ? undefined
+                  : "They receive an email with a link that expires in 7 days."
+              }
+              footer={
+                createdInviteUrl ? (
+                  <Button
+                    onClick={() => {
+                      setIsInviteModalOpen(false);
+                      setCreatedInviteUrl(null);
+                    }}
+                    fullWidth
                   >
-                    &times;
-                  </button>
-                </div>
-
-                {!createdInviteUrl ? (
-                  <form onSubmit={handleSendInvite} className="space-y-4">
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                        Colleague Email Address *
-                      </label>
-                      <input
-                        type="email"
-                        required
-                        value={inviteForm.email}
-                        onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
-                        placeholder="colleague@company.com"
-                        className={inputCls}
-                      />
-                      <p className="text-[11px] text-slate-500 mt-1">
-                        An email invitation with an onboarding link will be sent automatically.
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                        Workspace Role *
-                      </label>
-                      <select
-                        value={inviteForm.role}
-                        onChange={(e) =>
-                          setInviteForm({
-                            ...inviteForm,
-                            role: e.target.value as typeof inviteForm.role,
-                          })
-                        }
-                        className={inputCls}
-                      >
-                        <option value="ACCOUNTANT">ACCOUNTANT &mdash; Can manage ledger & parties</option>
-                        <option value="ADMIN">ADMIN &mdash; Can manage ledger, parties & settings</option>
-                        <option value="OWNER">OWNER &mdash; Full administrative ownership</option>
-                      </select>
-                    </div>
-
-                    {inviteError && (
-                      <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
-                        {inviteError}
-                      </p>
-                    )}
-
-                    <div className="flex items-center justify-end gap-3 pt-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsInviteModalOpen(false)}
-                        className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        disabled={inviteSubmitting}
-                        className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50 cursor-pointer"
-                      >
-                        {inviteSubmitting ? "Sending..." : "Send Invitation"}
-                      </button>
-                    </div>
-                  </form>
+                    Done
+                  </Button>
                 ) : (
-                  <div className="space-y-4">
-                    <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-xs text-emerald-400 text-center space-y-1">
-                      <p className="font-bold">Invitation sent successfully!</p>
-                      <p className="text-[11px] text-slate-400">
-                        An email was dispatched to the invitee. You can also share the direct link below.
-                      </p>
-                    </div>
+                  <>
+                    <Button
+                      variant="secondary"
+                      onClick={() => setIsInviteModalOpen(false)}
+                      fullWidth
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="submit"
+                      form="invite-member-form"
+                      isLoading={inviteSubmitting}
+                      loadingLabel="Sending..."
+                      fullWidth
+                    >
+                      Send invitation
+                    </Button>
+                  </>
+                )
+              }
+            >
+              {!createdInviteUrl ? (
+                <form id="invite-member-form" onSubmit={handleSendInvite} className="space-y-4">
+                  <InputField
+                    label="Colleague email address"
+                    type="email"
+                    required
+                    value={inviteForm.email}
+                    onChange={(e) => setInviteForm({ ...inviteForm, email: e.target.value })}
+                    placeholder="colleague@company.com"
+                    hint="An invitation email is sent automatically."
+                  />
 
-                    <div className="space-y-1.5">
-                      <label className="block text-[11px] font-medium text-slate-400">
-                        Direct Invitation Link:
-                      </label>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="text"
-                          readOnly
-                          value={createdInviteUrl}
-                          className={`${inputCls} font-mono text-[11px]`}
-                        />
-                        <button
-                          onClick={() => handleCopy(createdInviteUrl)}
-                          className="px-3.5 py-2.5 rounded-xl bg-indigo-600 text-xs font-semibold text-white hover:bg-indigo-500 transition-all flex-shrink-0 cursor-pointer"
-                        >
-                          {copiedLink ? "Copied!" : "Copy"}
-                        </button>
-                      </div>
-                    </div>
+                  <SelectField
+                    label="Workspace role"
+                    required
+                    value={inviteForm.role}
+                    onChange={(e) =>
+                      setInviteForm({
+                        ...inviteForm,
+                        role: e.target.value as typeof inviteForm.role,
+                      })
+                    }
+                  >
+                    <option value="ACCOUNTANT">Accountant &mdash; record parties and entries</option>
+                    <option value="ADMIN">Admin &mdash; also manage the team and reverse entries</option>
+                    {/* Only an owner may grant ownership; the server enforces
+                        this too, so the option is simply not offered here. */}
+                    {currentUserRole === "OWNER" && (
+                      <option value="OWNER">Owner &mdash; full control, including settings</option>
+                    )}
+                  </SelectField>
 
-                    <div className="pt-2 flex justify-end">
-                      <button
-                        onClick={() => {
-                          setIsInviteModalOpen(false);
-                          setCreatedInviteUrl(null);
-                        }}
-                        className="rounded-xl bg-slate-800 border border-slate-700 px-5 py-2 text-xs font-semibold text-slate-200 hover:bg-slate-700 transition-all cursor-pointer"
+                  {inviteError && (
+                    <p
+                      role="alert"
+                      className="text-xs text-danger font-medium bg-danger/10 border border-danger/20 p-2.5 rounded-xl text-center"
+                    >
+                      {inviteError}
+                    </p>
+                  )}
+                </form>
+              ) : (
+                <div className="space-y-4">
+                  <p className="p-3 rounded-xl bg-receivable/10 border border-receivable/20 text-xs text-receivable text-center">
+                    The invitation email has been sent. You can also share the link directly.
+                  </p>
+
+                  <div className="space-y-1.5">
+                    <label
+                      htmlFor="invite-link"
+                      className="block text-[11px] font-medium text-fg-subtle"
+                    >
+                      Direct invitation link
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        id="invite-link"
+                        type="text"
+                        readOnly
+                        value={createdInviteUrl}
+                        // min-w-0 so the field can shrink instead of pushing
+                        // the copy button off the edge on a narrow screen.
+                        className="min-w-0 flex-1 rounded-xl bg-canvas border border-line px-3.5 py-2.5 font-mono text-[11px] text-fg"
+                      />
+                      <Button
+                        onClick={() => handleCopy(createdInviteUrl)}
+                        className="shrink-0"
                       >
-                        Done
-                      </button>
+                        {copiedLink ? "Copied" : "Copy"}
+                      </Button>
                     </div>
                   </div>
-                )}
-              </div>
-            </div>
+                </div>
+              )}
+            </Modal>
           )}
         </div>
       )}

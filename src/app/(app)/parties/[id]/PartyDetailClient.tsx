@@ -4,7 +4,15 @@ import { useState } from "react";
 import Link from "next/link";
 import { formatCurrency, toMajorUnits } from "@/shared/utils/currency";
 import { exportToCSV } from "@/shared/utils/export-csv";
-import { useToast, useConfirm } from "@/shared/components/ui";
+import {
+  useToast,
+  useConfirm,
+  Modal,
+  Button,
+  InputField,
+  SelectField,
+  TextareaField,
+} from "@/shared/components/ui";
 
 export interface TransactionItem {
   id: string;
@@ -503,256 +511,190 @@ export default function PartyDetailClient({
 
       {/* Record Transaction Modal */}
       {isTxModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-md rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-5">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-100">
-                Record Transaction &mdash; {party.name}
-              </h2>
-              <button
-                onClick={() => setIsTxModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 text-lg leading-none"
+        <Modal
+          isOpen={isTxModalOpen}
+          onClose={() => setIsTxModalOpen(false)}
+          title="Record a transaction"
+          description={"Posts a ledger entry against " + party.name + "."}
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsTxModalOpen(false)} fullWidth>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="record-party-transaction-form"
+                isLoading={txSubmitting}
+                loadingLabel="Recording..."
+                fullWidth
               >
-                &times;
-              </button>
-            </div>
+                Save transaction
+              </Button>
+            </>
+          }
+        >
+          <form
+            id="record-party-transaction-form"
+            onSubmit={handleRecordTransaction}
+            className="space-y-4"
+          >
+            <SelectField
+              label="Transaction type"
+              required
+              value={txType}
+              onChange={(e) => setTxType(e.target.value as typeof txType)}
+            >
+              <option value="PAYMENT_RECEIVED">Payment received (in)</option>
+              <option value="SALE">Sale / invoice (receivable)</option>
+              <option value="PAYMENT_MADE">Payment made (out)</option>
+              <option value="PURCHASE">Purchase / bill (payable)</option>
+              <option value="ADJUSTMENT">Balance adjustment</option>
+            </SelectField>
 
-            <form onSubmit={handleRecordTransaction} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Transaction Type *
-                </label>
-                <select
-                  value={txType}
-                  onChange={(e) => setTxType(e.target.value as typeof txType)}
-                  className={inputCls}
-                >
-                  <option value="PAYMENT_RECEIVED">💰 Payment Received (In)</option>
-                  <option value="SALE">📦 Sale / Invoice (Receivable)</option>
-                  <option value="PAYMENT_MADE">💸 Payment Made (Out)</option>
-                  <option value="PURCHASE">🛒 Purchase / Bill (Payable)</option>
-                  <option value="ADJUSTMENT">⚖️ Balance Adjustment</option>
-                </select>
-              </div>
+            {txType === "ADJUSTMENT" && (
+              <SelectField
+                label="Adjustment direction"
+                hint="Which side of the balance this entry moves."
+                value={direction}
+                onChange={(e) => setDirection(e.target.value as "RECEIVABLE" | "PAYABLE")}
+              >
+                <option value="RECEIVABLE">Increase customer receivable (to collect)</option>
+                <option value="PAYABLE">Increase vendor payable (to pay)</option>
+              </SelectField>
+            )}
 
-              {txType === "ADJUSTMENT" && (
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Adjustment Direction
-                  </label>
-                  <select
-                    value={direction}
-                    onChange={(e) => setDirection(e.target.value as "RECEIVABLE" | "PAYABLE")}
-                    className={inputCls}
-                  >
-                    <option value="RECEIVABLE">Increase Customer Receivable (To Collect)</option>
-                    <option value="PAYABLE">Increase Vendor Payable (To Pay)</option>
-                  </select>
-                </div>
-              )}
+            <InputField
+              label={"Amount (" + currency + ")"}
+              type="number"
+              step="0.01"
+              min="0.01"
+              required
+              value={txAmount}
+              onChange={(e) => setTxAmount(e.target.value)}
+              placeholder="0.00"
+              hint="Positive, with up to two decimal places."
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Amount ({currency}) *
-                </label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0.01"
-                  required
-                  value={txAmount}
-                  onChange={(e) => setTxAmount(e.target.value)}
-                  placeholder="0.00"
-                  className={inputCls}
-                />
-              </div>
+            <InputField
+              label="Reference / invoice number"
+              value={txRef}
+              onChange={(e) => setTxRef(e.target.value)}
+              placeholder="e.g. INV-1002 or UPI-9872"
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Reference / Invoice # (Optional)
-                </label>
-                <input
-                  type="text"
-                  value={txRef}
-                  onChange={(e) => setTxRef(e.target.value)}
-                  placeholder="e.g. INV-1002 or UPI-9872"
-                  className={inputCls}
-                />
-              </div>
+            <TextareaField
+              label="Notes / description"
+              rows={2}
+              value={txNotes}
+              onChange={(e) => setTxNotes(e.target.value)}
+              placeholder="Additional notes about this transaction..."
+              className="resize-none"
+            />
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Notes / Description (Optional)
-                </label>
-                <textarea
-                  rows={2}
-                  value={txNotes}
-                  onChange={(e) => setTxNotes(e.target.value)}
-                  placeholder="Additional notes about this transaction..."
-                  className={`${inputCls} resize-none`}
-                />
-              </div>
-
-              {txError && (
-                <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
-                  {txError}
-                </p>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsTxModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={txSubmitting}
-                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50"
-                >
-                  {txSubmitting ? "Recording..." : "Save Transaction"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            {txError && (
+              <p
+                role="alert"
+                className="text-xs text-danger font-medium bg-danger/10 border border-danger/20 p-2.5 rounded-xl text-center"
+              >
+                {txError}
+              </p>
+            )}
+          </form>
+        </Modal>
       )}
 
       {/* Edit Party Profile Modal */}
       {isEditModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg rounded-2xl bg-slate-900 border border-slate-800 p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-bold text-slate-100">Edit Party Profile</h2>
-              <button
-                onClick={() => setIsEditModalOpen(false)}
-                className="text-slate-400 hover:text-slate-200 text-lg leading-none"
+        <Modal
+          isOpen={isEditModalOpen}
+          onClose={() => setIsEditModalOpen(false)}
+          title="Edit party profile"
+          footer={
+            <>
+              <Button variant="secondary" onClick={() => setIsEditModalOpen(false)} fullWidth>
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                form="edit-party-form"
+                isLoading={editSubmitting}
+                loadingLabel="Saving..."
+                fullWidth
               >
-                &times;
-              </button>
+                Save changes
+              </Button>
+            </>
+          }
+        >
+          <form id="edit-party-form" onSubmit={handleEditParty} className="space-y-4">
+            <InputField
+              label="Party name"
+              required
+              value={editForm.name}
+              onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+            />
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <InputField
+                label="Phone number"
+                type="tel"
+                value={editForm.phone}
+                onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
+              />
+              <InputField
+                label="Email address"
+                type="email"
+                value={editForm.email}
+                onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
+              />
             </div>
 
-            <form onSubmit={handleEditParty} className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Party Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editForm.name}
-                  onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                  className={inputCls}
-                />
-              </div>
+            <TextareaField
+              label="Billing address"
+              rows={2}
+              value={editForm.address}
+              onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+              className="resize-none"
+            />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Phone Number
-                  </label>
-                  <input
-                    type="tel"
-                    value={editForm.phone}
-                    onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    Email Address
-                  </label>
-                  <input
-                    type="email"
-                    value={editForm.email}
-                    onChange={(e) => setEditForm({ ...editForm, email: e.target.value })}
-                    className={inputCls}
-                  />
-                </div>
-              </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <InputField
+                label="GSTIN"
+                maxLength={15}
+                value={editForm.gstin}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, gstin: e.target.value.toUpperCase() })
+                }
+              />
+              <InputField
+                label="PAN"
+                maxLength={10}
+                value={editForm.pan}
+                onChange={(e) =>
+                  setEditForm({ ...editForm, pan: e.target.value.toUpperCase() })
+                }
+              />
+            </div>
 
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Billing Address
-                </label>
-                <textarea
-                  rows={2}
-                  value={editForm.address}
-                  onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
-                  className={`${inputCls} resize-none`}
-                />
-              </div>
+            <TextareaField
+              label="Notes"
+              rows={2}
+              value={editForm.notes}
+              onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+              className="resize-none"
+            />
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    GSTIN
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={15}
-                    value={editForm.gstin}
-                    onChange={(e) => setEditForm({ ...editForm, gstin: e.target.value.toUpperCase() })}
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                    PAN
-                  </label>
-                  <input
-                    type="text"
-                    maxLength={10}
-                    value={editForm.pan}
-                    onChange={(e) => setEditForm({ ...editForm, pan: e.target.value.toUpperCase() })}
-                    className={inputCls}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-slate-400 mb-1.5">
-                  Notes
-                </label>
-                <textarea
-                  rows={2}
-                  value={editForm.notes}
-                  onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
-                  className={`${inputCls} resize-none`}
-                />
-              </div>
-
-              {editError && (
-                <p className="text-xs text-rose-400 font-medium bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl text-center">
-                  {editError}
-                </p>
-              )}
-
-              <div className="flex items-center justify-end gap-3 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsEditModalOpen(false)}
-                  className="px-4 py-2.5 rounded-xl text-xs font-medium text-slate-400 hover:text-slate-200"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={editSubmitting}
-                  className="rounded-xl bg-indigo-600 px-5 py-2.5 text-xs font-semibold text-white shadow-lg shadow-indigo-600/20 hover:bg-indigo-500 transition-all disabled:opacity-50"
-                >
-                  {editSubmitting ? "Saving..." : "Save Changes"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+            {editError && (
+              <p
+                role="alert"
+                className="text-xs text-danger font-medium bg-danger/10 border border-danger/20 p-2.5 rounded-xl text-center"
+              >
+                {editError}
+              </p>
+            )}
+          </form>
+        </Modal>
       )}
     </div>
   );
 }
-
-const inputCls =
-  "w-full rounded-xl bg-slate-900 border border-slate-800 px-3.5 py-2.5 text-xs text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition";
