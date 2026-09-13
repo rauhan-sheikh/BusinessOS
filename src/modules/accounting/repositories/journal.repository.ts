@@ -126,15 +126,24 @@ export const journalRepository = {
    * The original is never edited. The unique constraint on reversedEntryId means
    * two concurrent reversals cannot both succeed, so this needs no
    * check-then-act read.
+   *
+   * Accepts an existing transaction client for the same reason post() does, and
+   * it matters more here: callers reverse an entry as one step of undoing a
+   * document. Opening a private transaction would commit the reversal
+   * independently of the work around it, so a failure afterwards would roll
+   * back the document's own cleanup while leaving the books already reversed -
+   * and on a bounded connection pool, a nested transaction can deadlock waiting
+   * for a connection the outer one is holding.
    */
   async reverse(
     entryId: string,
     businessId: string,
     createdById: string,
-    narration?: string
+    narration?: string,
+    tx?: Prisma.TransactionClient
   ) {
-    return prisma.$transaction(async (tx) => {
-      const original = await tx.journalEntry.findFirst({
+    const run = async (client: Prisma.TransactionClient) => {
+      const original = await client.journalEntry.findFirst({
         where: { id: entryId, businessId },
         include: { lines: { include: { account: true } } },
       });
@@ -174,25 +183,32 @@ export const journalRepository = {
           narration: narration ?? `Reversal of entry ${original.id.slice(0, 8)}`,
           lines,
         },
-        tx
-      ).catch((err: unknown) => {
-        if (
-          typeof err === "object" &&
-          err !== null &&
-          (err as { code?: string }).code === "P2002"
-        ) {
-          throw new AppError("This entry has already been reversed", 409);
-        }
-        throw err;
-      });
+        client
+      );
 
-      await tx.journalEntry.update({
-        where: { id: reversal.id },
-        data: { reversedEntryId: original.id },
-      });
+      // The unique constraint lives on this column, so this is the statement a
+      // concurrent second reversal loses on - not the post above, where the
+      // check used to sit and could therefore never fire.
+      await client.journalEntry
+        .update({
+          where: { id: reversal.id },
+          data: { reversedEntryId: original.id },
+        })
+        .catch((err: unknown) => {
+          if (
+            typeof err === "object" &&
+            err !== null &&
+            (err as { code?: string }).code === "P2002"
+          ) {
+            throw new AppError("This entry has already been reversed", 409);
+          }
+          throw err;
+        });
 
       return reversal;
-    });
+    };
+
+    return tx ? run(tx) : prisma.$transaction(run);
   },
 
   /**

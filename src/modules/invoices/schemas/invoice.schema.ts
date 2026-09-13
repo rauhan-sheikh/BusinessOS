@@ -88,6 +88,10 @@ export const cancelInvoiceSchema = z.object({
   reason: z.string().max(500).optional().or(z.literal("")),
 });
 
+export const reversePaymentSchema = z.object({
+  reason: z.string().max(500).optional().or(z.literal("")),
+});
+
 export const listInvoicesQuerySchema = z.object({
   kind: z.enum(["SALES", "PURCHASE"]).optional(),
   status: z.enum(["DRAFT", "ISSUED", "PARTIALLY_PAID", "PAID", "CANCELLED"]).optional(),

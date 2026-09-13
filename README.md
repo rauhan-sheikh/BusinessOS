@@ -77,6 +77,7 @@
 - **Signed journal lines.** A line's `amountMinor` is positive for a debit and negative for a credit, and every entry must satisfy `SUM(lines) = 0`. `assertPostable()` refuses an unbalanced entry rather than writing half a posting.
 - **Control accounts require a party.** A line against `ACCOUNTS_RECEIVABLE` or `ACCOUNTS_PAYABLE` must name one; a line against any other account must not. This is what keeps the subsidiary ledger reconcilable to the control account.
 - **Reversal, not deletion.** Correcting a posting writes the inverse entry and links the two. Nothing in the journal is edited or removed after the fact.
+- **Posting and reversal both join the caller's transaction.** `post()` and `reverse()` accept an existing transaction client, so a document and the entry that records it commit or roll back together. A reversal that committed on its own would leave the books changed while the work that justified it rolled back — an integration test forces exactly that failure and asserts nothing survives it.
 - **Rounding is posted, not hidden.** Where a total is rounded to whole units, the difference goes to a rounding account so the entry still balances.
 
 ### 3. Invoicing, Payments & GST
@@ -86,6 +87,7 @@
 - **Gapless per-financial-year numbering.** `INV/2026-27/0001`, allocated inside the issuing transaction via a row-locked sequence. A draft is unnumbered: an abandoned draft must not consume a number that then goes missing, which GST does not permit.
 - **Draft → issue → cancel.** A draft touches nothing. Issuing allocates the number and posts to the books in one transaction. Cancelling reverses the posting but keeps the document and its number, because removing either would leave a gap.
 - **Payment allocation, three ways.** Settle oldest first (FIFO), choose the amounts per invoice, or hold the money on account as an advance. `paidMinor` and invoice status are recalculated from the allocation rows, so they cannot drift from the payments that justify them.
+- **Payment reversal is posted, not deleted.** An opposing journal entry is written, the allocations are removed so every invoice it settled goes back to outstanding, and the payment row is kept and marked with `reversedAt`, who reversed it, why, and which entry undid it. The reversing entry is unique per payment, so the database refuses a second reversal rather than relying on a check-then-act read. A reversed payment can no longer be allocated.
 - **Aging report** bucketed at not-due / 1–30 / 31–60 / 61–90 / over 90 days, expandable per counterparty down to the individual document.
 - **Item catalogue** supplying defaults for lines. An item's description, price and rate are *copied* onto the line, so editing an item later never rewrites an invoice already issued.
 - **The create form previews totals using the same `calculateInvoice` the server posts with**, so what the screen shows cannot drift from what reaches the books.
@@ -427,7 +429,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 - **Unit** — minor-unit parsing and formatting, the ledger effect table, balance replay (including a randomised property test against incremental application), the permission matrix, CSV escaping, invoice arithmetic and GST splitting, financial-year numbering, and payment allocation.
 - **Component** (jsdom, opted into per file with a `// @vitest-environment jsdom` docblock) — that forms are labelled and dialogs are reachable from the keyboard, that the invoice form's on-screen totals equal what `calculateInvoice` produces for the same input, and that each payment allocation mode sends the request it claims to.
-- **Integration** — real database behaviour that cannot be mocked: that concurrent balance updates are not lost, that the unique constraint blocks a double reversal, that the `CHECK` constraint rejects a non-positive amount, that privilege escalation paths are closed, and that snapshots still agree with the ledger.
+- **Integration** — real database behaviour that cannot be mocked: that concurrent balance updates are not lost, that the unique constraint blocks a double reversal, that the `CHECK` constraint rejects a non-positive amount, that privilege escalation paths are closed, that a reversal rolls back with the transaction that requested it, and that snapshots still agree with the ledger.
 
 Integration tests skip themselves when `DATABASE_URL` is unset, so `npm test` runs without a local database. CI provides a Postgres service container so they actually execute.
 
@@ -506,7 +508,6 @@ Honest about what is not built yet:
 - **Minor-unit exponent is fixed at 2.** Currencies with a different exponent (JPY, KWD) are not supported. Currency also cannot be changed once the ledger has entries, since stored amounts are denominated in it.
 - **No printable invoice.** There is no PDF or print view, so an issued invoice cannot yet be sent to a customer from the app.
 - **No trial balance or P&L screen.** The double-entry data supports them — `accountTotals()` exists — but nothing renders them yet.
-- **Payments can be reversed only through the service layer.** There is no route or UI for it, and `Payment` carries no reversed marker, so a reversed payment would still read as live in the list. Both are needed before the action is exposed.
 - **No item management screen.** The catalogue is readable from the invoice form and writable through the API, but there is no page to add or edit items.
 - **An invoice cannot be edited.** Correcting one means cancelling and re-issuing; there is no credit-note flow yet.
 - **Rate limiting is in-process**, so on serverless it is per-instance rather than global. Adequate against a naive script; not a defence against a distributed attacker.

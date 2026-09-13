@@ -13,6 +13,7 @@ import {
   SelectField,
   Pagination,
   useToast,
+  useConfirm,
 } from "@/shared/components/ui";
 import RecordPaymentModal, { type PartyOption } from "./RecordPaymentModal";
 
@@ -24,8 +25,11 @@ export interface PaymentRow {
   method: string | null;
   reference: string | null;
   notes: string | null;
+  reversedAt: string | null;
+  reversalReason: string | null;
   party: { id: string; name: string };
   createdBy: { id: string; name: string | null };
+  reversedBy: { id: string; name: string | null } | null;
   allocations: Array<{
     id: string;
     amountMinor: string;
@@ -40,6 +44,7 @@ interface Props {
   currency: string;
   parties: PartyOption[];
   canRecord: boolean;
+  canReverse: boolean;
 }
 
 const formatDate = (value: string) =>
@@ -56,9 +61,11 @@ export default function PaymentsClient({
   currency,
   parties,
   canRecord,
+  canReverse,
 }: Props) {
   const router = useRouter();
   const toast = useToast();
+  const { confirm, confirmDialog } = useConfirm();
 
   const [payments, setPayments] = useState(initialPayments);
   const [totalCount, setTotalCount] = useState(initialTotalCount);
@@ -68,6 +75,7 @@ export default function PaymentsClient({
   const [isLoading, setIsLoading] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
 
   const load = async (nextPage = page, overrides: Record<string, string> = {}) => {
     setIsLoading(true);
@@ -95,8 +103,68 @@ export default function PaymentsClient({
     }
   };
 
+  const handleReverse = async (payment: PaymentRow) => {
+    const settled = payment.allocations.length;
+
+    const confirmed = await confirm({
+      title: "Reverse this payment?",
+      isDestructive: true,
+      confirmLabel: "Reverse payment",
+      cancelLabel: "Keep it",
+      message: (
+        <>
+          <p>
+            An opposing entry is posted for{" "}
+            <span className="font-semibold text-fg">
+              {formatCurrency(payment.amountMinor, currency)}
+            </span>
+            , taking it back out of the books.
+          </p>
+          {settled > 0 && (
+            <p className="mt-2">
+              {settled === 1 ? "The invoice" : `All ${settled} invoices`} it settled will
+              go back to outstanding.
+            </p>
+          )}
+          <p className="mt-2 text-fg-subtle">
+            The payment itself is kept and marked as reversed, so the record of what was
+            entered and then undone survives. This cannot be undone.
+          </p>
+        </>
+      ),
+    });
+    if (!confirmed) return;
+
+    setBusyId(payment.id);
+    try {
+      const res = await fetch(`/api/payments/${payment.id}/reverse`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Could not reverse this payment.");
+
+      toast.success(
+        data.invoicesUpdated > 0
+          ? `Payment reversed. ${data.invoicesUpdated} ${
+              data.invoicesUpdated === 1 ? "invoice is" : "invoices are"
+            } outstanding again.`
+          : "Payment reversed."
+      );
+      await load();
+      router.refresh();
+    } catch (err: unknown) {
+      toast.error(err instanceof Error ? err.message : "Could not reverse this payment.");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
+      {confirmDialog}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-fg">Payments</h1>
@@ -182,6 +250,11 @@ export default function PaymentsClient({
                   <th scope="col" className="py-3 px-4 font-semibold">Reference</th>
                   <th scope="col" className="py-3 px-4 font-semibold text-right">Amount</th>
                   <th scope="col" className="py-3 px-4 font-semibold text-right">Applied</th>
+                  {canReverse && (
+                    <th scope="col" className="py-3 px-4 font-semibold text-right">
+                      Actions
+                    </th>
+                  )}
                 </tr>
               </thead>
               <tbody className="divide-y divide-line">
@@ -192,6 +265,10 @@ export default function PaymentsClient({
                   );
                   const onAccount = BigInt(payment.amountMinor) - applied;
                   const isOpen = expanded === payment.id;
+                  // Held in a const so TypeScript narrows it inside the JSX
+                  // below, rather than needing a non-null assertion there.
+                  const reversedAt = payment.reversedAt;
+                  const isReversed = reversedAt !== null;
 
                   return (
                     <Fragment key={payment.id}>
@@ -212,22 +289,34 @@ export default function PaymentsClient({
                           </button>
                         </td>
                         <td className="py-3 px-4">
-                          <Badge
-                            tone={payment.kind === "SALES" ? "receivable" : "payable"}
-                          >
-                            {payment.kind === "SALES" ? "Received" : "Paid"}
-                          </Badge>
+                          {isReversed ? (
+                            <Badge tone="danger">Reversed</Badge>
+                          ) : (
+                            <Badge
+                              tone={payment.kind === "SALES" ? "receivable" : "payable"}
+                            >
+                              {payment.kind === "SALES" ? "Received" : "Paid"}
+                            </Badge>
+                          )}
                         </td>
                         <td className="py-3 px-4 text-fg-subtle">
                           {payment.reference || payment.method || (
                             <span aria-hidden="true">&mdash;</span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-right font-bold text-fg whitespace-nowrap">
+                        <td
+                          className={`py-3 px-4 text-right font-bold whitespace-nowrap ${
+                            isReversed ? "text-fg-subtle line-through" : "text-fg"
+                          }`}
+                        >
                           {formatCurrency(payment.amountMinor, currency)}
                         </td>
                         <td className="py-3 px-4 text-right whitespace-nowrap">
-                          {applied > 0n ? (
+                          {/* A reversed payment has no allocations either, so
+                              without this it would read as "On account". */}
+                          {isReversed ? (
+                            <span className="text-danger">Reversed</span>
+                          ) : applied > 0n ? (
                             <span className="text-fg-muted">
                               {formatCurrency(applied, currency)}
                             </span>
@@ -235,12 +324,43 @@ export default function PaymentsClient({
                             <span className="text-fg-subtle">On account</span>
                           )}
                         </td>
+                        {canReverse && (
+                          <td
+                            className="py-3 px-4 text-right whitespace-nowrap"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {!isReversed && (
+                              <Button
+                                size="sm"
+                                variant="secondary"
+                                isLoading={busyId === payment.id}
+                                onClick={() => void handleReverse(payment)}
+                              >
+                                Reverse
+                              </Button>
+                            )}
+                          </td>
+                        )}
                       </tr>
 
                       {isOpen && (
                         <tr className="bg-canvas/60">
-                          <td colSpan={6} className="py-3 px-4">
-                            {payment.allocations.length === 0 ? (
+                          <td colSpan={canReverse ? 7 : 6} className="py-3 px-4">
+                            {isReversed ? (
+                              <p className="text-[11px] text-danger">
+                                Reversed on {formatDate(reversedAt)}
+                                {payment.reversedBy?.name
+                                  ? ` by ${payment.reversedBy.name}`
+                                  : ""}
+                                {payment.reversalReason
+                                  ? `: ${payment.reversalReason}`
+                                  : "."}{" "}
+                                <span className="text-fg-subtle">
+                                  An opposing entry was posted, and anything it had
+                                  settled is outstanding again.
+                                </span>
+                              </p>
+                            ) : payment.allocations.length === 0 ? (
                               <p className="text-[11px] text-fg-subtle">
                                 Held on account as an advance against{" "}
                                 {payment.party.name}. It can be applied to a later
@@ -274,7 +394,7 @@ export default function PaymentsClient({
                               </ul>
                             )}
 
-                            {onAccount > 0n && payment.allocations.length > 0 && (
+                            {!isReversed && onAccount > 0n && payment.allocations.length > 0 && (
                               <p className="text-[11px] text-fg-subtle mt-2">
                                 {formatCurrency(onAccount, currency)} of this payment is
                                 still unapplied.

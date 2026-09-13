@@ -32,6 +32,7 @@ const PAYMENT_INCLUDE = {
   allocations: { include: { invoice: { select: { id: true, number: true, totalMinor: true } } } },
   party: { select: { id: true, name: true } },
   createdBy: { select: { id: true, name: true } },
+  reversedBy: { select: { id: true, name: true } },
 } satisfies Prisma.PaymentInclude;
 
 /**
@@ -200,6 +201,14 @@ export const paymentRepository = {
         include: { allocations: true },
       });
       if (!payment) throw new AppError("Payment not found", 404);
+      // Reversal empties the allocations, which would otherwise leave this
+      // method free to re-apply money that is no longer in the books.
+      if (payment.reversedAt) {
+        throw new AppError(
+          "This payment has been reversed, so it cannot be allocated.",
+          409
+        );
+      }
 
       const touched = new Set(payment.allocations.map((a) => a.invoiceId));
       allocations.forEach((a) => touched.add(a.invoiceId));
@@ -255,7 +264,14 @@ export const paymentRepository = {
    *
    * The payment row and its journal entry are both kept; an opposing entry is
    * posted instead, so the history of what was recorded and then undone
-   * survives.
+   * survives. Because reversal deletes the allocations, the row is also marked
+   * with reversedAt and the reversing entry - otherwise a reversed payment
+   * would be indistinguishable from one deliberately held on account.
+   *
+   * Everything here runs in one transaction, the reversing entry included: the
+   * posting and the allocation cleanup it justifies must not be able to land
+   * separately, or an invoice would go on reading as paid with the money
+   * already reversed out of the books.
    */
   async reverse(paymentId: string, businessId: string, actorUserId: string, reason?: string) {
     return prisma.$transaction(async (tx) => {
@@ -267,14 +283,20 @@ export const paymentRepository = {
       if (!payment.journalEntryId) {
         throw new AppError("This payment was never posted.", 409);
       }
+      // Advisory only. The real guard is the unique constraint on
+      // reversalEntryId below, which two concurrent callers cannot both pass.
+      if (payment.reversedAt) {
+        throw new AppError("This payment has already been reversed.", 409);
+      }
 
       const invoiceIds = payment.allocations.map((a) => a.invoiceId);
 
-      await journalRepository.reverse(
+      const reversalEntry = await journalRepository.reverse(
         payment.journalEntryId,
         businessId,
         actorUserId,
-        reason ? `Payment reversed: ${reason}` : "Payment reversed"
+        reason ? `Payment reversed: ${reason}` : "Payment reversed",
+        tx
       );
 
       await tx.paymentAllocation.deleteMany({ where: { paymentId } });
@@ -282,7 +304,34 @@ export const paymentRepository = {
         await refreshInvoice(tx, invoiceId);
       }
 
-      return { paymentId, reversed: true, invoicesUpdated: invoiceIds.length };
+      const reversed = await tx.payment
+        .update({
+          where: { id: paymentId },
+          data: {
+            reversedAt: new Date(),
+            reversedById: actorUserId,
+            reversalReason: reason ?? null,
+            reversalEntryId: reversalEntry.id,
+          },
+          include: PAYMENT_INCLUDE,
+        })
+        .catch((err: unknown) => {
+          if (
+            typeof err === "object" &&
+            err !== null &&
+            (err as { code?: string }).code === "P2002"
+          ) {
+            throw new AppError("This payment has already been reversed.", 409);
+          }
+          throw err;
+        });
+
+      return {
+        paymentId,
+        reversed: true,
+        invoicesUpdated: invoiceIds.length,
+        payment: reversed,
+      };
     });
   },
 

@@ -289,6 +289,138 @@ describe.skipIf(!hasDatabase)("payments (database)", () => {
       expect(stillThere).not.toBeNull();
     });
 
+    it("marks the payment, so it cannot be mistaken for one held on account", async () => {
+      const invoice = await issuedInvoice(250_00n, new Date(2028, 6, 1));
+
+      const payment = await paymentRepository.record({
+        businessId, createdById: userId, partyId, kind: "SALES",
+        amountMinor: 250_00n,
+        paymentDate: new Date(2028, 6, 2),
+        allocations: [{ invoiceId: invoice.id, amountMinor: 250_00n }],
+      });
+
+      await paymentRepository.reverse(payment.id, businessId, userId, "cheque bounced");
+
+      const reversed = await prisma.payment.findUniqueOrThrow({
+        where: { id: payment.id },
+        include: { allocations: true },
+      });
+
+      // Reversal empties the allocations, which is exactly what an on-account
+      // payment looks like. Only these fields tell the two apart.
+      expect(reversed.allocations).toHaveLength(0);
+      expect(reversed.reversedAt).not.toBeNull();
+      expect(reversed.reversedById).toBe(userId);
+      expect(reversed.reversalReason).toBe("cheque bounced");
+      expect(reversed.reversalEntryId).not.toBeNull();
+
+      // The marker points at the entry that actually undid it.
+      const entry = await prisma.journalEntry.findUniqueOrThrow({
+        where: { id: reversed.reversalEntryId as string },
+      });
+      expect(entry.reversedEntryId).toBe(payment.journalEntryId);
+    });
+
+    it("refuses to reverse the same payment twice", async () => {
+      const invoice = await issuedInvoice(120_00n, new Date(2028, 6, 10));
+
+      const payment = await paymentRepository.record({
+        businessId, createdById: userId, partyId, kind: "SALES",
+        amountMinor: 120_00n,
+        paymentDate: new Date(2028, 6, 11),
+        allocations: [{ invoiceId: invoice.id, amountMinor: 120_00n }],
+      });
+
+      await paymentRepository.reverse(payment.id, businessId, userId);
+
+      await expect(
+        paymentRepository.reverse(payment.id, businessId, userId)
+      ).rejects.toThrow(/already been reversed/i);
+
+      // One reversing entry, not two.
+      const reversals = await prisma.journalEntry.count({
+        where: { businessId, reversedEntryId: payment.journalEntryId },
+      });
+      expect(reversals).toBe(1);
+    });
+
+    it("refuses to re-allocate a reversed payment", async () => {
+      const invoice = await issuedInvoice(300_00n, new Date(2028, 7, 1));
+
+      const payment = await paymentRepository.record({
+        businessId, createdById: userId, partyId, kind: "SALES",
+        amountMinor: 300_00n,
+        paymentDate: new Date(2028, 7, 2),
+        allocations: [{ invoiceId: invoice.id, amountMinor: 300_00n }],
+      });
+
+      await paymentRepository.reverse(payment.id, businessId, userId);
+
+      // Reversal leaves the payment with no allocations, so without a guard
+      // this would settle the invoice again with money already taken back out
+      // of the books.
+      await expect(
+        paymentRepository.reallocate(payment.id, businessId, [
+          { invoiceId: invoice.id, amountMinor: 300_00n },
+        ])
+      ).rejects.toThrow(/has been reversed/i);
+
+      const untouched = await prisma.invoice.findUniqueOrThrow({
+        where: { id: invoice.id },
+      });
+      expect(untouched.paidMinor).toBe(0n);
+      expect(untouched.status).toBe("ISSUED");
+    });
+
+    it("rolls the reversing entry back when the caller's transaction fails", async () => {
+      const invoice = await issuedInvoice(500_00n, new Date(2028, 8, 1));
+
+      const payment = await paymentRepository.record({
+        businessId, createdById: userId, partyId, kind: "SALES",
+        amountMinor: 500_00n,
+        paymentDate: new Date(2028, 8, 2),
+        allocations: [{ invoiceId: invoice.id, amountMinor: 500_00n }],
+      });
+
+      const entriesBefore = await prisma.journalEntry.count({ where: { businessId } });
+      const balanceBefore = await prisma.partyBalance.findUniqueOrThrow({
+        where: { partyId },
+      });
+
+      await expect(
+        prisma.$transaction(async (tx) => {
+          await journalRepository.reverse(
+            payment.journalEntryId as string,
+            businessId,
+            userId,
+            "reversed inside a transaction that then fails",
+            tx
+          );
+          throw new Error("caller failed after reversing");
+        })
+      ).rejects.toThrow("caller failed after reversing");
+
+      // journalRepository.reverse used to open its own transaction, so the
+      // reversing entry committed regardless of what the caller did next -
+      // leaving the books reversed while the work that justified it rolled
+      // back. Passing the caller's client is what ties the two together.
+      expect(await prisma.journalEntry.count({ where: { businessId } })).toBe(
+        entriesBefore
+      );
+
+      const balanceAfter = await prisma.partyBalance.findUniqueOrThrow({
+        where: { partyId },
+      });
+      expect(balanceAfter.receivableMinor).toBe(balanceBefore.receivableMinor);
+      expect(balanceAfter.payableMinor).toBe(balanceBefore.payableMinor);
+
+      // And the invoice is still settled, because nothing was undone.
+      const stillPaid = await prisma.invoice.findUniqueOrThrow({
+        where: { id: invoice.id },
+      });
+      expect(stillPaid.paidMinor).toBe(500_00n);
+    });
+
     it("restores the counterparty balance", async () => {
       const invoice = await issuedInvoice(400_00n, new Date(2028, 3, 1));
       const before = await prisma.partyBalance.findUniqueOrThrow({ where: { partyId } });

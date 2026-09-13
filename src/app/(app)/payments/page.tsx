@@ -30,6 +30,7 @@ export default async function PaymentsPage() {
       currency={business.currency || "INR"}
       parties={partyOptions}
       canRecord={hasPermission(role, PERMISSION.PAYMENT_RECORD)}
+      canReverse={hasPermission(role, PERMISSION.PAYMENT_REVERSE)}
     />
   );
 }

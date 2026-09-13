@@ -160,7 +160,8 @@ model User {
   emailTemplatesUpdated EmailTemplateOverride[]
   journalEntries        JournalEntry[]
   invoices              Invoice[]
-  payments              Payment[]
+  payments              Payment[]               @relation("PaymentCreatedBy")
+  paymentsReversed      Payment[]               @relation("PaymentReversedBy")
 
   @@map("user")
 }
@@ -523,18 +524,36 @@ model Payment {
 
   journalEntryId String? @unique
 
+  /// Set when the payment has been reversed.
+  ///
+  /// The row is kept: the money did arrive and was then taken back, and
+  /// deleting it would erase that. Reversal removes the allocations, so
+  /// without this marker a reversed payment is indistinguishable in a list
+  /// from one deliberately held on account.
+  reversedAt     DateTime?
+  reversedById   String?
+  reversalReason String?
+
+  /// The reversing journal entry. Unique, so the database refuses a second
+  /// reversal of the same payment rather than relying on a check-then-act read.
+  reversalEntryId String? @unique
+
   createdById String
   createdAt   DateTime @default(now())
 
   business    Business            @relation(fields: [businessId], references: [id], onDelete: Restrict)
   party       Party               @relation(fields: [partyId], references: [id], onDelete: Restrict)
-  createdBy   User                @relation(fields: [createdById], references: [id], onDelete: Restrict)
+  createdBy   User                @relation("PaymentCreatedBy", fields: [createdById], references: [id], onDelete: Restrict)
+  /// Restrict, like every other actor link on a financial record: who reversed
+  /// a payment must not disappear when the account is deleted.
+  reversedBy  User?               @relation("PaymentReversedBy", fields: [reversedById], references: [id], onDelete: Restrict)
   allocations PaymentAllocation[]
 
   @@index([businessId, paymentDate(sort: Desc)])
   @@index([businessId, partyId])
   @@index([partyId])
   @@index([createdById])
+  @@index([reversedById])
 }
 
 /// How much of a payment settles which invoice.
